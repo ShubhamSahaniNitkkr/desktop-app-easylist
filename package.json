@@ -17,6 +17,11 @@
     "appId": "com.easylist.app",
     "productName": "EasyList",
     "asar": true,
+    "extraMetadata": {
+      "env": {
+        "NODE_ENV": "production"
+      }
+    },
     "directories": {
       "buildResources": "assets",
       "output": "release"
