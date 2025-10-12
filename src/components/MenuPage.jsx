@@ -1,6 +1,6 @@
 // src/components/MenuPage.jsx
 import React, { useEffect, useState } from "react";
-import { Button, Select, message } from "antd";
+import { Button, message, Select } from "antd";
 import { getAll, add } from "../utils/ipc";
 
 export default function MenuPage() {
@@ -24,28 +24,24 @@ export default function MenuPage() {
     })();
   }, []);
 
-  function addRecipeToCell(day, meal) {
+  function addRecipe(day, meal) {
     const pick = prompt(
-      "Enter recipe name (available: " +
-        recipes.map((r) => r.name).join(", ") +
+      "Type recipe name (available: " +
+        (recipes || []).map((r) => r.name).join(", ") +
         ")"
     );
     if (!pick) return;
     setGrid((g) => {
+      const cp = { ...g };
       const key = `${day}__${meal}`;
-      const next = { ...g };
-      next[key] = [...(next[key] || []), pick];
-      return next;
+      cp[key] = [...(cp[key] || []), pick];
+      return cp;
     });
   }
 
-  async function saveMenu() {
-    const menu = {
-      id: Date.now().toString(),
-      name: "menu_" + Date.now(),
-      grid,
-    };
-    await add("menus", menu);
+  async function save() {
+    const obj = { id: Date.now().toString(), name: "menu_" + Date.now(), grid };
+    await add("menus", obj);
     message.success("Menu saved");
   }
 
@@ -59,7 +55,7 @@ export default function MenuPage() {
               <div
                 key={d}
                 style={{
-                  minWidth: 120,
+                  minWidth: 140,
                   borderLeft: "1px solid #eee",
                   paddingLeft: 8,
                 }}
@@ -70,17 +66,17 @@ export default function MenuPage() {
                     key={m}
                     style={{
                       border: "1px solid #f0f0f0",
-                      padding: 6,
+                      padding: 8,
                       marginTop: 8,
                     }}
                   >
                     <div style={{ fontWeight: 600 }}>{m}</div>
-                    <div style={{ minHeight: 60 }}>
+                    <div style={{ minHeight: 80 }}>
                       {(grid[`${d}__${m}`] || []).map((r, i) => (
                         <div key={i}>{r}</div>
                       ))}
                     </div>
-                    <Button size="small" onClick={() => addRecipeToCell(d, m)}>
+                    <Button size="small" onClick={() => addRecipe(d, m)}>
                       +
                     </Button>
                   </div>
@@ -89,17 +85,18 @@ export default function MenuPage() {
             ))}
           </div>
           <div style={{ marginTop: 12 }}>
-            <Button type="primary" onClick={saveMenu}>
+            <Button type="primary" onClick={save}>
               Save Menu
             </Button>
           </div>
         </div>
 
         <div style={{ width: 360 }} className="list">
-          <h4>Options / Notes</h4>
+          <h4>Shopping list</h4>
           <p>
-            Generate shopping list and scale according to people based on recipe
-            reference ingredient (To implement: use Options profiles for ages)
+            When saved, you can generate a shopping list from a menu by summing
+            scaled ingredient quantities (future extension: generate directly
+            here).
           </p>
         </div>
       </div>

@@ -1,19 +1,20 @@
 // src/components/IngredientPage.jsx
 import React, { useEffect, useState } from "react";
 import {
+  Form,
   Input,
   Select,
   Button,
   Row,
   Col,
-  Form,
   InputNumber,
   message,
+  Upload,
+  Image,
 } from "antd";
+import { UploadOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import { getAll, add, update, queryIngredients, pickImage } from "../utils/ipc";
-
-const { Option } = Select;
 
 export default function IngredientPage() {
   const { t } = useTranslation();
@@ -21,6 +22,7 @@ export default function IngredientPage() {
   const [ingredients, setIngredients] = useState([]);
   const [form] = Form.useForm();
   const [imageData, setImageData] = useState("");
+  const [loadingList, setLoadingList] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -32,24 +34,37 @@ export default function IngredientPage() {
 
   async function onSave() {
     try {
-      const values = await form.validateFields();
-      // name validation
-      if (!values.name) return message.error("Name required");
+      const vals = await form.validateFields();
+      const name = vals.name.trim();
+      if (!name) return message.error("Name required");
+      if (/^\d+$/.test(name))
+        return message.error("Name cannot be only numbers");
       const obj = {
-        name: values.name,
-        supplier: values.supplier || "",
-        article: values.article || "",
-        category: values.category || options?.categories?.[0] || "",
-        unit: values.unit || options?.units?.[0] || "g",
-        prepLoss: values.prepLoss || 0,
-        price: Number(values.price || 0),
-        weightPiece: Number(values.weightPiece || 0),
-        allergen: values.allergen || "",
+        name,
+        supplier: vals.supplier || "",
+        article: vals.article || "",
+        category: vals.category || options?.categories?.[0] || "",
+        unit: vals.unit || options?.units?.[0] || "g",
+        prepLoss: Number(vals.prepLoss || 0),
+        price: Number(vals.price || 0),
+        weightPiece: Number(vals.weightPiece || 0),
+        weightPerLiter: Number(vals.weightPerLiter || 1000),
+        tspWeight: Number(vals.tspWeight || 5),
+        tbspWeight: Number(vals.tbspWeight || 15),
+        allergen: vals.allergen || "",
+        nutrition: {
+          protein: Number(vals.protein || 0),
+          carbs: Number(vals.carbs || 0),
+          fats: Number(vals.fats || 0),
+          calories: Number(vals.calories || 0),
+          fiber: Number(vals.fiber || 0),
+          salt: Number(vals.salt || 0),
+        },
         image: imageData || "",
       };
-      // check duplicate
-      const existing = (await getAll()).ingredients.find(
-        (i) => i.name.toLowerCase() === obj.name.toLowerCase()
+      const all = await getAll();
+      const existing = (all.ingredients || []).find(
+        (i) => i.name.toLowerCase() === name.toLowerCase()
       );
       if (existing) {
         await update("ingredients", existing.id, obj);
@@ -58,8 +73,10 @@ export default function IngredientPage() {
         await add("ingredients", obj);
         message.success(t("Save successful"));
       }
-      const all = await getAll();
-      setIngredients(all.ingredients || []);
+      const re = await getAll();
+      setIngredients(re.ingredients || []);
+      form.resetFields();
+      setImageData("");
     } catch (e) {
       message.error(e.message || "Error");
     }
@@ -74,8 +91,13 @@ export default function IngredientPage() {
   }
 
   async function onQuery(q) {
-    const list = await queryIngredients(q);
-    setIngredients(list);
+    setLoadingList(true);
+    try {
+      const list = await queryIngredients(q);
+      setIngredients(list);
+    } finally {
+      setLoadingList(false);
+    }
   }
 
   return (
@@ -95,7 +117,6 @@ export default function IngredientPage() {
             <Form.Item label={t("Supplier")} name="supplier">
               <Input list="suppliers" />
             </Form.Item>
-
             <datalist id="suppliers">
               {(options?.suppliers || []).map((s) => (
                 <option key={s} value={s} />
@@ -105,11 +126,11 @@ export default function IngredientPage() {
             <Row gutter={12}>
               <Col span={12}>
                 <Form.Item label={t("Category")} name="category">
-                  <Select>
+                  <Select showSearch>
                     {(options?.categories || []).map((c) => (
-                      <Option key={c} value={c}>
+                      <Select.Option key={c} value={c}>
                         {c}
-                      </Option>
+                      </Select.Option>
                     ))}
                   </Select>
                 </Form.Item>
@@ -118,9 +139,9 @@ export default function IngredientPage() {
                 <Form.Item label={t("Unit")} name="unit">
                   <Select>
                     {(options?.units || []).map((u) => (
-                      <Option key={u} value={u}>
+                      <Select.Option key={u} value={u}>
                         {u}
-                      </Option>
+                      </Select.Option>
                     ))}
                   </Select>
                 </Form.Item>
@@ -145,15 +166,69 @@ export default function IngredientPage() {
               </Col>
             </Row>
 
+            <Row gutter={12}>
+              <Col span={8}>
+                <Form.Item label="Weight per liter (g)" name="weightPerLiter">
+                  <InputNumber min={0} defaultValue={1000} />
+                </Form.Item>
+              </Col>
+              <Col span={8}>
+                <Form.Item label="tsp weight (g)" name="tspWeight">
+                  <InputNumber min={0} defaultValue={5} />
+                </Form.Item>
+              </Col>
+              <Col span={8}>
+                <Form.Item label="tbsp weight (g)" name="tbspWeight">
+                  <InputNumber min={0} defaultValue={15} />
+                </Form.Item>
+              </Col>
+            </Row>
+
             <Form.Item label={t("Allergen")} name="allergen">
               <Select>
                 {(options?.allergens || []).map((a) => (
-                  <Option key={a} value={a}>
+                  <Select.Option key={a} value={a}>
                     {a}
-                  </Option>
+                  </Select.Option>
                 ))}
               </Select>
             </Form.Item>
+
+            <h4>{t("Nutrition (per 100g)")}</h4>
+            <Row gutter={12}>
+              <Col span={8}>
+                <Form.Item label="Protein" name="protein">
+                  <InputNumber min={0} />
+                </Form.Item>
+              </Col>
+              <Col span={8}>
+                <Form.Item label="Carbs" name="carbs">
+                  <InputNumber min={0} />
+                </Form.Item>
+              </Col>
+              <Col span={8}>
+                <Form.Item label="Fats" name="fats">
+                  <InputNumber min={0} />
+                </Form.Item>
+              </Col>
+            </Row>
+            <Row gutter={12}>
+              <Col span={8}>
+                <Form.Item label="Calories" name="calories">
+                  <InputNumber min={0} />
+                </Form.Item>
+              </Col>
+              <Col span={8}>
+                <Form.Item label="Fiber" name="fiber">
+                  <InputNumber min={0} />
+                </Form.Item>
+              </Col>
+              <Col span={8}>
+                <Form.Item label="Salt" name="salt">
+                  <InputNumber min={0} />
+                </Form.Item>
+              </Col>
+            </Row>
 
             <div style={{ display: "flex", gap: 8 }}>
               <Button
@@ -179,7 +254,7 @@ export default function IngredientPage() {
             onChange={(e) => onQuery(e.target.value)}
             style={{ marginBottom: 8 }}
           />
-          <div>
+          <div style={{ maxHeight: 520, overflow: "auto" }}>
             {(ingredients || []).map((i) => (
               <div
                 key={i.id}
@@ -193,13 +268,13 @@ export default function IngredientPage() {
               >
                 <div>
                   <div style={{ fontWeight: 700 }}>{i.name}</div>
-                  <div style={{ opacity: 0.7 }}>
+                  <div style={{ opacity: 0.65 }}>
                     {i.category} • {i.unit} • {i.supplier}
                   </div>
                 </div>
                 <div style={{ display: "flex", gap: 8 }}>
                   <Button
-                    onClick={() =>
+                    onClick={() => {
                       form.setFieldsValue({
                         name: i.name,
                         supplier: i.supplier,
@@ -209,9 +284,19 @@ export default function IngredientPage() {
                         prepLoss: i.prepLoss,
                         price: i.price,
                         weightPiece: i.weightPiece,
+                        weightPerLiter: i.weightPerLiter,
+                        tspWeight: i.tspWeight,
+                        tbspWeight: i.tbspWeight,
                         allergen: i.allergen,
-                      })
-                    }
+                        protein: i.nutrition?.protein,
+                        carbs: i.nutrition?.carbs,
+                        fats: i.nutrition?.fats,
+                        calories: i.nutrition?.calories,
+                        fiber: i.nutrition?.fiber,
+                        salt: i.nutrition?.salt,
+                      });
+                      setImageData(i.image || "");
+                    }}
                   >
                     Load
                   </Button>
