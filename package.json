@@ -1,0 +1,59 @@
+{
+  "name": "easylist",
+  "version": "1.0.0",
+  "description": "EasyList offline desktop app",
+  "main": "electron/main.js",
+  "author": "You",
+  "private": false,
+  "scripts": {
+    "dev": "concurrently -k \"npm:dev:vite\" \"npm:dev:electron\"",
+    "dev:vite": "vite",
+    "dev:electron": "wait-on tcp:5173 && cross-env NODE_ENV=development electron .",
+    "build": "vite build && electron-builder",
+    "start": "cross-env NODE_ENV=production electron ."
+  },
+  "build": {
+    "appId": "com.easylist.app",
+    "productName": "EasyList",
+    "directories": {
+      "buildResources": "assets",
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icon.ico"
+    },
+    "mac": {
+      "category": "public.app-category.productivity",
+      "icon": "assets/icon.icns"
+    },
+    "linux": {
+      "target": "AppImage",
+      "icon": "assets/icons/"
+    }
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.7.0",
+    "concurrently": "^9.2.1",
+    "cross-env": "^10.1.0",
+    "electron": "^38.2.2",
+    "electron-builder": "^26.0.12",
+    "vite": "^6.3.6",
+    "wait-on": "^9.0.1"
+  },
+  "dependencies": {
+    "antd": "^5.27.4",
+    "i18next": "^25.6.0",
+    "lodash": "^4.17.21",
+    "lowdb": "^7.0.1",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "react-i18next": "^16.0.0",
+    "uuid": "^13.0.0"
+  }
+}
