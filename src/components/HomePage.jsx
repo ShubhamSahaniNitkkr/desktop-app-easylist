@@ -1,6 +1,7 @@
 // src/components/HomePage.jsx
 import React from "react";
 import { useTranslation } from "react-i18next";
+import { Row, Col, Card } from "antd";
 
 export default function HomePage({ navigate }) {
   const { t } = useTranslation();

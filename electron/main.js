@@ -2,8 +2,22 @@
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const { v4: uuidv4 } = require('uuid');
-const { db, init, dbFile } = require('./db');
+const { v4: uuidv4 } = require('uuid'); // ✅ Works with uuid@8 (CommonJS)
+const { init, db } = require('./db');
+
+// Helper to wait for Vite dev server before loading
+async function waitForVite(url, retries = 30, delayMs = 1000) {
+    for (let i = 0; i < retries; i++) {
+        try {
+            const res = await fetch(url);
+            if (res.ok) return true;
+        } catch (err) {
+            console.log(`[Electron] Waiting for Vite dev server... (${i + 1}/${retries})`);
+            await new Promise(r => setTimeout(r, delayMs));
+        }
+    }
+    return false;
+}
 
 async function createWindow() {
     const win = new BrowserWindow({
@@ -16,27 +30,46 @@ async function createWindow() {
         }
     });
 
-    // In dev load vite server; in production load built index
     if (process.env.NODE_ENV === 'production') {
         win.loadFile(path.join(__dirname, '../dist/index.html'));
     } else {
-        win.loadURL('http://localhost:5173');
+        const devServerURL = 'http://localhost:5173';
+        const ready = await waitForVite(devServerURL);
+
+        if (ready) {
+            console.log('[Electron] Vite dev server ready, loading app...');
+            await win.loadURL(devServerURL);
+        } else {
+            console.error('[Electron] Failed to connect to Vite dev server.');
+            win.loadURL('data:text/html,<h1>Failed to connect to Vite dev server.</h1>');
+        }
     }
+
+    // Optional: open DevTools for debugging during dev
+    // if (process.env.NODE_ENV === 'development') {
+    //     win.webContents.openDevTools({ mode: 'detach' });
+    // }
 }
 
 app.whenReady().then(async () => {
-    await init();
-    createWindow();
-    app.on('activate', () => {
-        if (BrowserWindow.getAllWindows().length === 0) createWindow();
-    });
+    try {
+        await init();
+        await createWindow();
+
+        app.on('activate', () => {
+            if (BrowserWindow.getAllWindows().length === 0) createWindow();
+        });
+    } catch (err) {
+        console.error('App startup error:', err);
+        dialog.showErrorBox('Startup Error', err.message);
+    }
 });
 
 app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') app.quit();
 });
 
-/* ---------- DB IPC ---------- */
+/* ---------- IPC DB handlers ---------- */
 ipcMain.handle('db-getAll', async () => {
     await db.read();
     return db.data;
@@ -50,7 +83,7 @@ ipcMain.handle('db-get', async (event, key) => {
 ipcMain.handle('db-add', async (event, collection, item) => {
     await db.read();
     item.id = item.id || uuidv4();
-    if (!Array.isArray(db.data[collection])) db.data[collection] = [];
+    db.data[collection] = db.data[collection] || [];
     db.data[collection].push(item);
     await db.write();
     return item;
@@ -59,13 +92,12 @@ ipcMain.handle('db-add', async (event, collection, item) => {
 ipcMain.handle('db-update', async (event, collection, id, patch) => {
     await db.read();
     if (collection === 'options') {
-        // direct replace merge
         db.data.options = { ...db.data.options, ...(patch || {}) };
         await db.write();
         return db.data.options;
     }
     const col = db.data[collection] || [];
-    const idx = col.findIndex(x => x.id === id);
+    const idx = col.findIndex((x) => x.id === id);
     if (idx === -1) throw new Error('Not found');
     col[idx] = { ...col[idx], ...(patch || {}) };
     await db.write();
@@ -74,7 +106,7 @@ ipcMain.handle('db-update', async (event, collection, id, patch) => {
 
 ipcMain.handle('db-delete', async (event, collection, id) => {
     await db.read();
-    db.data[collection] = (db.data[collection] || []).filter(x => x.id !== id);
+    db.data[collection] = (db.data[collection] || []).filter((x) => x.id !== id);
     await db.write();
     return true;
 });
@@ -83,10 +115,10 @@ ipcMain.handle('db-queryIngredients', async (event, q) => {
     await db.read();
     q = (q || '').toLowerCase();
     const all = db.data.ingredients || [];
-    return all.filter(i => i.name && i.name.toLowerCase().includes(q)).slice(0, 30);
+    return all.filter((i) => i.name && i.name.toLowerCase().includes(q)).slice(0, 50);
 });
 
-/* ---------- Export / Import ---------- */
+/* ---------- export / import ---------- */
 ipcMain.handle('db-exportJSON', async () => {
     await db.read();
     const content = JSON.stringify(db.data, null, 2);
@@ -116,7 +148,7 @@ ipcMain.handle('db-importJSON', async () => {
     }
 });
 
-/* ---------- pick image ---------- */
+/* ---------- file pick image ---------- */
 ipcMain.handle('file-pickImage', async () => {
     const { canceled, filePaths } = await dialog.showOpenDialog({
         filters: [{ name: 'Images', extensions: ['jpg', 'jpeg', 'png'] }],
@@ -128,15 +160,19 @@ ipcMain.handle('file-pickImage', async () => {
     return { canceled: false, data: `data:image/${ext};base64,${data}` };
 });
 
-/* ---------- print to PDF simple ---------- */
+/* ---------- print to PDF ---------- */
 ipcMain.handle('print-to-pdf', async (event, html) => {
-    const win = BrowserWindow.getAllWindows()[0];
-    // temporary: create a BrowserWindow to render html
     const tmp = new BrowserWindow({ show: false, webPreferences: { offscreen: true } });
     await tmp.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
     const pdf = await tmp.webContents.printToPDF({});
-    const { canceled, filePath } = await dialog.showSaveDialog({ defaultPath: 'recipe.pdf', filters: [{ name: 'PDF', extensions: ['pdf'] }] });
-    if (canceled) { tmp.close(); return { canceled: true }; }
+    const { canceled, filePath } = await dialog.showSaveDialog({
+        defaultPath: 'recipe.pdf',
+        filters: [{ name: 'PDF', extensions: ['pdf'] }]
+    });
+    if (canceled) {
+        tmp.close();
+        return { canceled: true };
+    }
     fs.writeFileSync(filePath, pdf);
     tmp.close();
     return { canceled: false, path: filePath };

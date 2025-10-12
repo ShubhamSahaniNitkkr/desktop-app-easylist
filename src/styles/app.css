@@ -1,0 +1,82 @@
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  font-family: Inter, Arial, sans-serif;
+  background: #f6f7f9;
+}
+.ant-layout {
+  height: 100%;
+}
+.topbar {
+  background: #2f3b45;
+  color: white;
+  padding: 12px 18px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.topbar .title {
+  font-weight: 700;
+  font-size: 20px;
+  color: white;
+}
+.container {
+  padding: 18px;
+}
+.card-grid {
+  display: flex;
+  gap: 24px;
+  justify-content: center;
+  padding-top: 40px;
+}
+.big-tile {
+  width: 170px;
+  height: 140px;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 18px;
+  border-radius: 8px;
+  cursor: pointer;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.06);
+}
+.tile-ingredient {
+  background: #3498db;
+}
+.tile-recipe {
+  background: #e74c3c;
+}
+.tile-menu {
+  background: #27ae60;
+}
+.tile-options {
+  background: #8e44ad;
+}
+.page {
+  padding: 18px;
+  background: transparent;
+}
+.list {
+  background: white;
+  padding: 12px;
+  border-radius: 6px;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.03);
+}
+.form-row {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 12px;
+  align-items: center;
+}
+.label {
+  width: 160px;
+  color: #333;
+  font-weight: 600;
+}
+.small {
+  width: 120px;
+}

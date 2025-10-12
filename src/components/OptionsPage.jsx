@@ -1,19 +1,20 @@
 // src/components/OptionsPage.jsx
 import React, { useEffect, useState } from "react";
-import { Input, Button, Select, message } from "antd";
-import { getAll, update } from "../utils/ipc";
+import { Input, Button, Select, message, Table, Popconfirm } from "antd";
+import { getAll, update, exportJSON, importJSON } from "../utils/ipc";
 
 export default function OptionsPage({ refreshOptions }) {
   const [options, setOptions] = useState(null);
   const [newCat, setNewCat] = useState("");
   const [newSup, setNewSup] = useState("");
-  const [lang, setLang] = useState("fr");
+  const [ageLabel, setAgeLabel] = useState("");
+  const [ageCategory, setAgeCategory] = useState("");
+  const [agePortion, setAgePortion] = useState("");
 
   useEffect(() => {
     (async () => {
       const all = await getAll();
       setOptions(all.options || {});
-      setLang(all.options?.defaultLang || "fr");
     })();
   }, []);
 
@@ -31,6 +32,26 @@ export default function OptionsPage({ refreshOptions }) {
     setNewSup("");
   }
 
+  function addStandardPortion() {
+    if (!ageLabel || !ageCategory || !agePortion)
+      return message.error("Please fill fields");
+    setOptions((o) => ({
+      ...o,
+      standardPortions: [
+        ...(o.standardPortions || []),
+        {
+          id: Date.now().toString(),
+          label: ageLabel,
+          category: ageCategory,
+          grams: Number(agePortion),
+        },
+      ],
+    }));
+    setAgeLabel("");
+    setAgeCategory("");
+    setAgePortion("");
+  }
+
   async function save() {
     try {
       await update("options", null, options);
@@ -41,7 +62,45 @@ export default function OptionsPage({ refreshOptions }) {
     }
   }
 
+  async function onExport() {
+    const res = await exportJSON();
+    if (!res.canceled) message.success("Exported to " + res.path);
+  }
+  async function onImport() {
+    const res = await importJSON();
+    if (res.error) message.error(res.error);
+    else {
+      message.success("Imported");
+      window.location.reload();
+    }
+  }
+
   if (!options) return null;
+
+  const columns = [
+    { title: "Label", dataIndex: "label", key: "label" },
+    { title: "Category", dataIndex: "category", key: "category" },
+    { title: "Grams", dataIndex: "grams", key: "grams" },
+    {
+      title: "",
+      key: "action",
+      render: (_, rec) => (
+        <Popconfirm
+          title="Delete?"
+          onConfirm={() => {
+            setOptions((o) => ({
+              ...o,
+              standardPortions: (o.standardPortions || []).filter(
+                (p) => p.id !== rec.id
+              ),
+            }));
+          }}
+        >
+          <a>Delete</a>
+        </Popconfirm>
+      ),
+    },
+  ];
 
   return (
     <div className="page">
@@ -53,11 +112,8 @@ export default function OptionsPage({ refreshOptions }) {
               Default Language
             </label>
             <Select
-              value={lang}
-              onChange={(v) => {
-                setLang(v);
-                setOptions((o) => ({ ...o, defaultLang: v }));
-              }}
+              value={options.defaultLang || "fr"}
+              onChange={(v) => setOptions((o) => ({ ...o, defaultLang: v }))}
             >
               <Select.Option value="fr">Français</Select.Option>
               <Select.Option value="en">English</Select.Option>
@@ -113,18 +169,59 @@ export default function OptionsPage({ refreshOptions }) {
           </div>
 
           <div style={{ marginTop: 12 }}>
+            <h4>Standard portions (by age / category)</h4>
+            <div style={{ display: "flex", gap: 8 }}>
+              <Input
+                placeholder="Label (e.g. 0-3 yrs)"
+                value={ageLabel}
+                onChange={(e) => setAgeLabel(e.target.value)}
+              />
+              <Select
+                placeholder="Category"
+                value={ageCategory}
+                onChange={(v) => setAgeCategory(v)}
+                style={{ width: 200 }}
+              >
+                {(options.categories || []).map((c) => (
+                  <Select.Option key={c} value={c}>
+                    {c}
+                  </Select.Option>
+                ))}
+              </Select>
+              <Input
+                placeholder="grams"
+                value={agePortion}
+                onChange={(e) => setAgePortion(e.target.value)}
+                style={{ width: 120 }}
+              />
+              <Button onClick={addStandardPortion}>Add</Button>
+            </div>
+
+            <Table
+              columns={columns}
+              dataSource={options.standardPortions || []}
+              rowKey="id"
+              pagination={false}
+              style={{ marginTop: 12 }}
+            />
+          </div>
+
+          <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
             <Button type="primary" onClick={save}>
               Apply
             </Button>
+            <Button onClick={onExport}>Export DB</Button>
+            <Button onClick={onImport}>Import DB</Button>
           </div>
         </div>
 
         <div style={{ width: 360 }} className="list">
-          <h4>Advanced</h4>
+          <h4>Advanced / Notes</h4>
           <p>
-            Allergen & category lists can be extended here. You can
-            import/export full DB via the top app controls (Home screen or
-            header).
+            Allergens and categories can be extended. The standard portions
+            table is used by the recipe scaling system: the first ingredient in
+            a recipe is used as the reference (category + portions) to calculate
+            the total amount to prepare for a group of people.
           </p>
         </div>
       </div>
