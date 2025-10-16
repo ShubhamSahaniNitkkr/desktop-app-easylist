@@ -6,42 +6,39 @@ import {
   Select,
   InputNumber,
   message,
-  Form,
   Row,
   Col,
   Checkbox,
-  Upload,
+  Card,
+  Typography,
+  Divider,
+  Tooltip,
+  Space,
+  Form,
 } from "antd";
-import {
-  getAll,
-  add,
-  queryIngredients,
-  pickImage,
-  printToPDF,
-  update,
-} from "../utils/ipc";
+import { getAll, add, pickImage, printToPDF } from "../utils/ipc";
 
-const { TextArea } = Input;
+const { Title, Text } = Typography;
 
 export default function RecipePage() {
   const [form] = Form.useForm();
   const [options, setOptions] = useState(null);
-  const [ingredients, setIngredients] = useState([]);
+  const [ingredientsDb, setIngredientsDb] = useState([]);
   const [recipe, setRecipe] = useState({
     ingredients: [],
     steps: [],
     image: "",
     rating: 50,
     asIngredient: false,
+    cookingMethod: "stovetop",
   });
-  const [ageCounts, setAgeCounts] = useState({}); // {label:count}
-  const [referenceTotals, setReferenceTotals] = useState(0);
+  const [ageCounts, setAgeCounts] = useState({});
 
   useEffect(() => {
     (async () => {
       const all = await getAll();
       setOptions(all.options || {});
-      setIngredients(all.ingredients || []);
+      setIngredientsDb(all.ingredients || []);
     })();
   }, []);
 
@@ -60,6 +57,7 @@ export default function RecipePage() {
       ],
     }));
   }
+
   function updateIng(i, field, v) {
     setRecipe((r) => {
       const cp = JSON.parse(JSON.stringify(r));
@@ -71,9 +69,13 @@ export default function RecipePage() {
   function addStep() {
     setRecipe((r) => ({
       ...r,
-      steps: [...(r.steps || []), { text: "", time: 0 }],
+      steps: [
+        ...(r.steps || []),
+        { text: "", time: 0, temperature: "", method: "" },
+      ],
     }));
   }
+
   function updateStep(i, field, v) {
     setRecipe((r) => {
       const cp = JSON.parse(JSON.stringify(r));
@@ -84,9 +86,8 @@ export default function RecipePage() {
 
   async function saveRecipe() {
     try {
-      const name = recipe.name?.trim();
+      const name = (recipe.name || "").trim();
       if (!name) return message.error("Recipe name required");
-      // Save to DB
       await add("recipes", recipe);
       message.success("Recipe saved");
     } catch (e) {
@@ -103,31 +104,27 @@ export default function RecipePage() {
     setAgeCounts((ac) => ({ ...ac, [label]: Number(count) }));
   }
 
-  // Compute scaling: find reference ingredient = first ingredient in list that has a category mapped in options
+  // scaling logic (unchanged)
   function computeScaledIngredients() {
     const std = options?.standardPortions || [];
     const ingredientsList = recipe.ingredients || [];
     if (ingredientsList.length === 0) return [];
 
-    // first ingredient is reference:
     const ref = ingredientsList[0];
-    // find category of ref by searching ingredients DB by name
-    const refIngredientMeta = (ingredients || []).find(
+    const refIngredientMeta = (ingredientsDb || []).find(
       (i) => i.name.toLowerCase() === (ref.name || "").toLowerCase()
     );
     const refCategory = refIngredientMeta?.category || options?.categories?.[0];
-
-    // compute total people per age group
     let totalRefGrams = 0;
-    // for each standardPortion matching refCategory, multiply by count
+
     (std || []).forEach((s) => {
       if (s.category === refCategory) {
         const cnt = Number(ageCounts[s.label] || 0);
         totalRefGrams += (s.grams || 0) * cnt;
       }
     });
+
     if (totalRefGrams === 0) {
-      // fallback: sum all counts and multiply by default adult portion if exists, else use base qty
       const totalPeople = Object.values(ageCounts).reduce(
         (a, b) => a + Number(b || 0),
         0
@@ -138,20 +135,16 @@ export default function RecipePage() {
       totalRefGrams = totalPeople * adultPortion;
     }
 
-    // determine base reference in recipe: if recipe's first ingredient qty is in g or kg - compute in grams
     const refQty = Number(ref.qty) || 0;
-    const unit = ref.unit || "g";
+    const unitRef = ref.unit || "g";
     const refQtyInGrams =
-      unit === "kg"
+      unitRef === "kg"
         ? refQty * 1000
-        : unit === "l"
+        : unitRef === "l"
         ? refQty * (refIngredientMeta?.weightPerLiter || 1000)
         : refQty;
-
-    // ratio = totalRefGrams / refQtyInGrams
     const ratio = refQtyInGrams > 0 ? totalRefGrams / refQtyInGrams : 1;
 
-    // scale all ingredients
     return ingredientsList.map((i) => {
       const qty = Number(i.qty || 0);
       const unit = i.unit || "g";
@@ -160,18 +153,17 @@ export default function RecipePage() {
           ? qty * 1000
           : unit === "l"
           ? qty *
-            (ingredients.find(
+            (ingredientsDb.find(
               (ii) => ii.name.toLowerCase() === i.name?.toLowerCase()
             )?.weightPerLiter || 1000)
           : qty;
       const scaledInGrams = qtyInGrams * ratio;
-      // convert back to original unit
       let scaledQty = scaledInGrams;
       if (unit === "kg") scaledQty = scaledInGrams / 1000;
       if (unit === "l")
         scaledQty =
           scaledInGrams /
-          (ingredients.find(
+          (ingredientsDb.find(
             (ii) => ii.name.toLowerCase() === i.name?.toLowerCase()
           )?.weightPerLiter || 1000);
       return { ...i, scaledQty, scaledInGrams };
@@ -181,146 +173,300 @@ export default function RecipePage() {
   const scaled = computeScaledIngredients();
 
   return (
-    <div className="page">
-      <h2>Recipe</h2>
-      <div style={{ display: "flex", gap: 12 }}>
-        <div style={{ flex: 1 }} className="list">
-          <Row gutter={12}>
-            <Col span={16}>
-              <Input
-                placeholder="Recipe name"
-                value={recipe.name || ""}
-                onChange={(e) =>
-                  setRecipe((r) => ({ ...r, name: e.target.value }))
-                }
-              />
-            </Col>
-            <Col span={8}>
-              <Select
-                style={{ width: "100%" }}
-                value={recipe.category || "main"}
-                onChange={(v) => setRecipe((r) => ({ ...r, category: v }))}
-              >
-                <Select.Option value="starter">Starter</Select.Option>
-                <Select.Option value="main">Main</Select.Option>
-                <Select.Option value="dessert">Dessert</Select.Option>
-                <Select.Option value="vegetable">Vegetable</Select.Option>
-                <Select.Option value="protein">Protein</Select.Option>
-                <Select.Option value="starch">Starch</Select.Option>
-              </Select>
-            </Col>
-          </Row>
+    <div className="page" style={{ padding: 20 }}>
+      <Title level={3}>Recipe</Title>
 
-          <h4 style={{ marginTop: 12 }}>Ingredients</h4>
-          {(recipe.ingredients || []).map((ing, idx) => (
-            <div key={idx} style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-              <Input
-                style={{ width: 260 }}
-                value={ing.name}
-                onChange={(e) => updateIng(idx, "name", e.target.value)}
-                placeholder="Ingredient"
-              />
-              <InputNumber
-                style={{ width: 100 }}
-                value={ing.qty}
-                onChange={(v) => updateIng(idx, "qty", v)}
-              />
-              <Select
-                style={{ width: 120 }}
-                value={ing.unit}
-                onChange={(v) => updateIng(idx, "unit", v)}
+      <Row gutter={16}>
+        <Col span={16}>
+          <Card
+            bodyStyle={{ padding: 18 }}
+            style={{
+              boxShadow: "0 2px 12px rgba(0,0,0,0.08)",
+              borderRadius: 12,
+            }}
+          >
+            {/* Recipe Name + Meta */}
+            <Row gutter={12} align="middle">
+              <Col span={14}>
+                <Text strong>Recipe Name</Text>
+                <Input
+                  placeholder="e.g. 'Fried Squid' or supplier code"
+                  value={recipe.name || ""}
+                  onChange={(e) =>
+                    setRecipe((r) => ({ ...r, name: e.target.value }))
+                  }
+                  style={{ marginTop: 4 }}
+                />
+                <Text type="secondary">
+                  Keep it short & unique for menus & reports.
+                </Text>
+              </Col>
+              <Col span={5}>
+                <Text strong>Category</Text>
+                <Select
+                  style={{ width: "100%", marginTop: 4 }}
+                  value={recipe.category || "main"}
+                  onChange={(v) => setRecipe((r) => ({ ...r, category: v }))}
+                >
+                  {[
+                    "starter",
+                    "main",
+                    "dessert",
+                    "vegetable",
+                    "protein",
+                    "starch",
+                  ].map((c) => (
+                    <Select.Option key={c} value={c}>
+                      {c.charAt(0).toUpperCase() + c.slice(1)}
+                    </Select.Option>
+                  ))}
+                </Select>
+              </Col>
+              <Col span={5}>
+                <Text strong>Cooking Method</Text>
+                <Select
+                  style={{ width: "100%", marginTop: 4 }}
+                  value={recipe.cookingMethod || "stovetop"}
+                  onChange={(v) =>
+                    setRecipe((r) => ({ ...r, cookingMethod: v }))
+                  }
+                >
+                  {["stovetop", "oven", "grill", "fry", "steam"].map((m) => (
+                    <Select.Option key={m} value={m}>
+                      {m.charAt(0).toUpperCase() + m.slice(1)}
+                    </Select.Option>
+                  ))}
+                </Select>
+              </Col>
+            </Row>
+
+            <Divider />
+
+            {/* Ingredients Section */}
+            <Title level={5}>Ingredients</Title>
+            <Row gutter={8} style={{ marginBottom: 6 }}>
+              {recipe.ingredients.length !== 0 && (
+                <>
+                  <Col span={7}>
+                    <Text type="secondary">Ingredient Name</Text>
+                  </Col>
+                  <Col span={4}>
+                    <Text type="secondary">Quantity</Text>
+                  </Col>
+                  <Col span={4}>
+                    <Text type="secondary">Unit</Text>
+                  </Col>
+                  <Col span={4}>
+                    <Text type="secondary">Prep Loss (%)</Text>
+                  </Col>
+                  <Col span={4}>
+                    <Text type="secondary">Cooking Loss (%)</Text>
+                  </Col>
+                  <Col span={1}>{/* <Text type="secondary">—</Text> */}</Col>
+                </>
+              )}
+            </Row>
+
+            {(recipe.ingredients || []).map((ing, idx) => (
+              <Row
+                key={idx}
+                gutter={8}
+                style={{ marginBottom: 10 }}
+                align="middle"
               >
-                {(options?.units || ["g", "kg"]).map((u) => (
-                  <Select.Option key={u} value={u}>
-                    {u}
-                  </Select.Option>
-                ))}
-              </Select>
-              <InputNumber
-                style={{ width: 120 }}
-                value={ing.prepLoss}
-                onChange={(v) => updateIng(idx, "prepLoss", v)}
-                min={0}
-                max={100}
-              />
-              <InputNumber
-                style={{ width: 120 }}
-                value={ing.cookingLoss}
-                onChange={(v) => updateIng(idx, "cookingLoss", v)}
-                min={0}
-                max={100}
-              />
-              <Button
-                onClick={() =>
-                  setRecipe((r) => ({
-                    ...r,
-                    ingredients: r.ingredients.filter((_, i) => i !== idx),
-                  }))
-                }
+                <Col span={7}>
+                  <Input
+                    value={ing.name}
+                    onChange={(e) => updateIng(idx, "name", e.target.value)}
+                    placeholder="Ingredient"
+                  />
+                </Col>
+                <Col span={4}>
+                  <InputNumber
+                    style={{ width: "100%" }}
+                    value={ing.qty}
+                    onChange={(v) => updateIng(idx, "qty", v)}
+                  />
+                </Col>
+                <Col span={4}>
+                  <Select
+                    style={{ width: "100%" }}
+                    value={ing.unit}
+                    onChange={(v) => updateIng(idx, "unit", v)}
+                  >
+                    {(options?.units || ["g", "kg"]).map((u) => (
+                      <Select.Option key={u} value={u}>
+                        {u}
+                      </Select.Option>
+                    ))}
+                  </Select>
+                </Col>
+                <Col span={4}>
+                  <InputNumber
+                    style={{ width: "100%" }}
+                    value={ing.prepLoss}
+                    onChange={(v) => updateIng(idx, "prepLoss", v)}
+                    min={0}
+                    max={100}
+                    placeholder="%"
+                  />
+                </Col>
+                <Col span={4}>
+                  <InputNumber
+                    style={{ width: "100%" }}
+                    value={ing.cookingLoss}
+                    onChange={(v) => updateIng(idx, "cookingLoss", v)}
+                    min={0}
+                    max={100}
+                    placeholder="%"
+                  />
+                </Col>
+                <Col span={1}>
+                  <Button
+                    danger
+                    size="small"
+                    onClick={() =>
+                      setRecipe((r) => ({
+                        ...r,
+                        ingredients: r.ingredients.filter((_, i) => i !== idx),
+                      }))
+                    }
+                  >
+                    X
+                  </Button>
+                </Col>
+              </Row>
+            ))}
+            <Button onClick={addIngredientRow}>Add Ingredient</Button>
+
+            <Divider />
+
+            {/* Steps Section */}
+            <Title level={5}>Preparation Steps</Title>
+            {recipe.steps.length !== 0 && (
+              <Row gutter={8} style={{ marginBottom: 6 }}>
+                <Col span={10}>
+                  <Text type="secondary">Step Description</Text>
+                </Col>
+                <Col span={3}>
+                  <Text type="secondary">Time (min)</Text>
+                </Col>
+                <Col span={3}>
+                  <Text type="secondary">Temp (°C)</Text>
+                </Col>
+                <Col span={6}>
+                  <Text type="secondary">Method</Text>
+                </Col>
+                <Col span={2}>
+                  <Text type="secondary">Action</Text>
+                </Col>
+              </Row>
+            )}
+
+            {(recipe.steps || []).map((s, i) => (
+              <Row
+                key={i}
+                gutter={8}
+                style={{ marginBottom: 8 }}
+                align="middle"
               >
-                Remove
+                <Col span={10}>
+                  <Input
+                    value={s.text}
+                    onChange={(e) => updateStep(i, "text", e.target.value)}
+                    placeholder="Describe step"
+                  />
+                </Col>
+                <Col span={3}>
+                  <InputNumber
+                    style={{ width: "100%" }}
+                    value={s.time}
+                    onChange={(v) => updateStep(i, "time", v)}
+                    min={0}
+                  />
+                </Col>
+                <Col span={3}>
+                  <InputNumber
+                    style={{ width: "100%" }}
+                    value={s.temperature}
+                    onChange={(v) => updateStep(i, "temperature", v)}
+                    placeholder="°C"
+                    min={0}
+                  />
+                </Col>
+                <Col span={6}>
+                  <Select
+                    style={{ width: "100%" }}
+                    value={s.method || ""}
+                    onChange={(v) => updateStep(i, "method", v)}
+                    placeholder="Method"
+                  >
+                    {["sear", "boil", "bake", "fry", "steam"].map((m) => (
+                      <Select.Option key={m} value={m}>
+                        {m.charAt(0).toUpperCase() + m.slice(1)}
+                      </Select.Option>
+                    ))}
+                  </Select>
+                </Col>
+                <Col span={2}>
+                  <Button
+                    danger
+                    size="small"
+                    onClick={() =>
+                      setRecipe((r) => ({
+                        ...r,
+                        steps: r.steps.filter((_, idx) => idx !== i),
+                      }))
+                    }
+                  >
+                    Remove
+                  </Button>
+                </Col>
+              </Row>
+            ))}
+            <Button onClick={addStep}>Add Step</Button>
+
+            <Divider />
+
+            <Space style={{ marginTop: 12 }}>
+              <Button type="primary" onClick={saveRecipe}>
+                Save
               </Button>
-            </div>
-          ))}
-          <Button onClick={addIngredientRow}>Add ingredient</Button>
-
-          <h4 style={{ marginTop: 12 }}>Preparation steps</h4>
-          {(recipe.steps || []).map((s, i) => (
-            <div key={i} style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-              <Input
-                value={s.text}
-                onChange={(e) => {
-                  const cp = [...recipe.steps];
-                  cp[i].text = e.target.value;
-                  setRecipe({ ...recipe, steps: cp });
+              <Button onClick={pickImg}>Pick image</Button>
+              <Button
+                onClick={() => {
+                  const html = `<html><body><h1>${
+                    recipe.name || ""
+                  }</h1><h3>Ingredients</h3><ul>${(recipe.ingredients || [])
+                    .map((i) => `<li>${i.qty} ${i.unit} ${i.name}</li>`)
+                    .join("")}</ul></body></html>`;
+                  printToPDF(html);
                 }}
-                placeholder="Step text"
-              />
-              <InputNumber
-                value={s.time}
-                onChange={(v) => {
-                  const cp = [...recipe.steps];
-                  cp[i].time = v;
-                  setRecipe({ ...recipe, steps: cp });
-                }}
-                placeholder="min"
-              />
-            </div>
-          ))}
-          <Button onClick={addStep}>Add step</Button>
+              >
+                Print
+              </Button>
+              <Checkbox
+                checked={recipe.asIngredient}
+                onChange={(e) =>
+                  setRecipe((r) => ({ ...r, asIngredient: e.target.checked }))
+                }
+              >
+                Recipe can be used as ingredient
+              </Checkbox>
+            </Space>
+          </Card>
+        </Col>
 
-          <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
-            <Button type="primary" onClick={saveRecipe}>
-              Save
-            </Button>
-            <Button onClick={pickImg}>Pick image</Button>
-            <Button
-              onClick={() => {
-                const html = `<html><body><h1>${
-                  recipe.name || ""
-                }</h1><h3>Ingredients</h3><ul>${(recipe.ingredients || [])
-                  .map((i) => `<li>${i.qty} ${i.unit} ${i.name}</li>`)
-                  .join("")}</ul></body></html>`;
-                printToPDF(html);
-              }}
-            >
-              Print
-            </Button>
-            <Checkbox
-              checked={recipe.asIngredient}
-              onChange={(e) =>
-                setRecipe((r) => ({ ...r, asIngredient: e.target.checked }))
-              }
-            >
-              Recipe can be used as ingredient
-            </Checkbox>
-          </div>
-        </div>
-
-        <div style={{ width: 360 }} className="list">
-          <h4>Scaling & metadata</h4>
-          <div>
-            <b>Age group counts</b>
+        {/* Sidebar */}
+        <Col span={8}>
+          <Card
+            title="Scaling & Metadata"
+            style={{
+              boxShadow: "0 2px 12px rgba(0,0,0,0.08)",
+              borderRadius: 12,
+            }}
+          >
+            <Text strong>Age Group Counts</Text>
             <div style={{ marginTop: 8 }}>
               {(options?.standardPortions || []).map((sp) => (
                 <div
@@ -332,7 +478,7 @@ export default function RecipePage() {
                     marginBottom: 6,
                   }}
                 >
-                  <div style={{ width: 140 }}>
+                  <div style={{ width: 160 }}>
                     {sp.label} ({sp.grams} g)
                   </div>
                   <InputNumber
@@ -343,31 +489,34 @@ export default function RecipePage() {
                 </div>
               ))}
             </div>
-            <div style={{ marginTop: 12 }}>
-              <b>Scaled ingredients</b>
-              <div style={{ maxHeight: 300, overflow: "auto", marginTop: 8 }}>
-                {scaled.length === 0 && (
-                  <div style={{ opacity: 0.7 }}>
-                    Add ingredients and age counts to see scaled quantities
+
+            <Divider />
+
+            <Text strong>Scaled Ingredients</Text>
+            <div style={{ maxHeight: 260, overflow: "auto", marginTop: 8 }}>
+              {scaled.length === 0 && (
+                <div style={{ opacity: 0.7 }}>
+                  Add ingredients & age counts to see scaled quantities
+                </div>
+              )}
+              {scaled.map((s, idx) => (
+                <div
+                  key={idx}
+                  style={{ padding: 6, borderBottom: "1px solid #eee" }}
+                >
+                  <div style={{ fontWeight: 700 }}>{s.name}</div>
+                  <div style={{ opacity: 0.75 }}>
+                    {(s.scaledQty || 0).toFixed(2)} {s.unit} —{" "}
+                    {(s.scaledInGrams || 0).toFixed(1)} g
                   </div>
-                )}
-                {scaled.map((s, idx) => (
-                  <div
-                    key={idx}
-                    style={{ padding: 6, borderBottom: "1px solid #eee" }}
-                  >
-                    <div style={{ fontWeight: 700 }}>{s.name}</div>
-                    <div style={{ opacity: 0.75 }}>
-                      {(s.scaledQty || 0).toFixed(2)} {s.unit} —{" "}
-                      {(s.scaledInGrams || 0).toFixed(1)} g
-                    </div>
-                  </div>
-                ))}
-              </div>
+                </div>
+              ))}
             </div>
 
-            <div style={{ marginTop: 12 }}>
-              <b>Rating</b>
+            <Divider />
+
+            <Text strong>Rating</Text>
+            <div style={{ marginTop: 8 }}>
               <InputNumber
                 min={0}
                 max={100}
@@ -376,9 +525,9 @@ export default function RecipePage() {
               />{" "}
               %
             </div>
-          </div>
-        </div>
-      </div>
+          </Card>
+        </Col>
+      </Row>
     </div>
   );
 }

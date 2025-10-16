@@ -9,19 +9,20 @@ import {
   Col,
   InputNumber,
   message,
-  Upload,
-  Image,
+  Typography,
+  Divider,
+  Card,
 } from "antd";
-import { UploadOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
-import { getAll, add, update, queryIngredients, pickImage } from "../utils/ipc";
+import { getAll, add, update, queryIngredients } from "../utils/ipc";
+
+const { Title, Text } = Typography;
 
 export default function IngredientPage() {
   const { t } = useTranslation();
   const [options, setOptions] = useState(null);
   const [ingredients, setIngredients] = useState([]);
   const [form] = Form.useForm();
-  const [imageData, setImageData] = useState("");
   const [loadingList, setLoadingList] = useState(false);
 
   useEffect(() => {
@@ -39,10 +40,11 @@ export default function IngredientPage() {
       if (!name) return message.error("Name required");
       if (/^\d+$/.test(name))
         return message.error("Name cannot be only numbers");
+
       const obj = {
         name,
         supplier: vals.supplier || "",
-        article: vals.article || "",
+        article: vals.article || "", // 🆕 Item number field
         category: vals.category || options?.categories?.[0] || "",
         unit: vals.unit || options?.units?.[0] || "g",
         prepLoss: Number(vals.prepLoss || 0),
@@ -51,7 +53,7 @@ export default function IngredientPage() {
         weightPerLiter: Number(vals.weightPerLiter || 1000),
         tspWeight: Number(vals.tspWeight || 5),
         tbspWeight: Number(vals.tbspWeight || 15),
-        allergen: vals.allergen || "",
+        allergens: vals.allergens || [], // 🆕 Multiple allergens support
         nutrition: {
           protein: Number(vals.protein || 0),
           carbs: Number(vals.carbs || 0),
@@ -60,33 +62,24 @@ export default function IngredientPage() {
           fiber: Number(vals.fiber || 0),
           salt: Number(vals.salt || 0),
         },
-        image: imageData || "",
       };
+
       const all = await getAll();
       const existing = (all.ingredients || []).find(
         (i) => i.name.toLowerCase() === name.toLowerCase()
       );
       if (existing) {
         await update("ingredients", existing.id, obj);
-        message.success(t("Save successful"));
       } else {
         await add("ingredients", obj);
-        message.success(t("Save successful"));
       }
+
+      message.success(t("Save successful"));
       const re = await getAll();
       setIngredients(re.ingredients || []);
       form.resetFields();
-      setImageData("");
     } catch (e) {
       message.error(e.message || "Error");
-    }
-  }
-
-  async function onPickImage() {
-    const res = await pickImage();
-    if (!res.canceled) {
-      setImageData(res.data);
-      message.success("Image attached");
     }
   }
 
@@ -101,32 +94,68 @@ export default function IngredientPage() {
   }
 
   return (
-    <div className="page">
-      <h2>{t("Ingredient")}</h2>
-      <div style={{ display: "flex", gap: 12 }}>
-        <div style={{ width: 540 }} className="list">
+    <div className="page" style={{ padding: "24px 32px" }}>
+      <Title level={3} style={{ marginBottom: 12 }}>
+        🧂 {t("Ingredient Management")}
+      </Title>
+
+      <Divider />
+
+      <div
+        style={{
+          display: "flex",
+          gap: 24,
+          alignItems: "flex-start",
+          flexWrap: "wrap",
+        }}
+      >
+        {/* Left Section - Form */}
+        <Card
+          title="Add / Edit Ingredient"
+          bordered={false}
+          style={{
+            width: 560,
+            boxShadow: "0 2px 12px rgba(0,0,0,0.08)",
+            borderRadius: 12,
+          }}
+        >
           <Form form={form} layout="vertical">
             <Form.Item
               label={t("Name")}
               name="name"
               rules={[{ required: true }]}
             >
-              <Input onChange={(e) => onQuery(e.target.value)} />
+              <Input
+                placeholder="e.g., Fried Squid"
+                onChange={(e) => onQuery(e.target.value)}
+              />
             </Form.Item>
 
-            <Form.Item label={t("Supplier")} name="supplier">
-              <Input list="suppliers" />
-            </Form.Item>
-            <datalist id="suppliers">
-              {(options?.suppliers || []).map((s) => (
-                <option key={s} value={s} />
-              ))}
-            </datalist>
+            <Row gutter={12}>
+              <Col span={12}>
+                <Form.Item label={t("Supplier")} name="supplier">
+                  <Input
+                    list="suppliers"
+                    placeholder="Select or type supplier"
+                  />
+                </Form.Item>
+                <datalist id="suppliers">
+                  {(options?.suppliers || []).map((s) => (
+                    <option key={s} value={s} />
+                  ))}
+                </datalist>
+              </Col>
+              <Col span={12}>
+                <Form.Item label={t("Item Number")} name="article">
+                  <Input placeholder="e.g., 356477" />
+                </Form.Item>
+              </Col>
+            </Row>
 
             <Row gutter={12}>
               <Col span={12}>
                 <Form.Item label={t("Category")} name="category">
-                  <Select showSearch>
+                  <Select placeholder="Select category" showSearch>
                     {(options?.categories || []).map((c) => (
                       <Select.Option key={c} value={c}>
                         {c}
@@ -137,7 +166,7 @@ export default function IngredientPage() {
               </Col>
               <Col span={12}>
                 <Form.Item label={t("Unit")} name="unit">
-                  <Select>
+                  <Select placeholder="Select unit">
                     {(options?.units || []).map((u) => (
                       <Select.Option key={u} value={u}>
                         {u}
@@ -150,18 +179,18 @@ export default function IngredientPage() {
 
             <Row gutter={12}>
               <Col span={8}>
-                <Form.Item label={t("Preparation loss")} name="prepLoss">
-                  <InputNumber min={0} max={100} />
+                <Form.Item label={t("Preparation loss (%)")} name="prepLoss">
+                  <InputNumber min={0} max={100} style={{ width: "100%" }} />
                 </Form.Item>
               </Col>
               <Col span={8}>
                 <Form.Item label={t("Price per kg")} name="price">
-                  <InputNumber min={0} step={0.01} />
+                  <InputNumber min={0} step={0.01} style={{ width: "100%" }} />
                 </Form.Item>
               </Col>
               <Col span={8}>
                 <Form.Item label={t("Weight per piece (g)")} name="weightPiece">
-                  <InputNumber min={0} />
+                  <InputNumber min={0} style={{ width: "100%" }} />
                 </Form.Item>
               </Col>
             </Row>
@@ -169,23 +198,35 @@ export default function IngredientPage() {
             <Row gutter={12}>
               <Col span={8}>
                 <Form.Item label="Weight per liter (g)" name="weightPerLiter">
-                  <InputNumber min={0} defaultValue={1000} />
+                  <InputNumber
+                    min={0}
+                    defaultValue={1000}
+                    style={{ width: "100%" }}
+                  />
                 </Form.Item>
               </Col>
               <Col span={8}>
-                <Form.Item label="tsp weight (g)" name="tspWeight">
-                  <InputNumber min={0} defaultValue={5} />
+                <Form.Item label="Tsp weight (g)" name="tspWeight">
+                  <InputNumber
+                    min={0}
+                    defaultValue={5}
+                    style={{ width: "100%" }}
+                  />
                 </Form.Item>
               </Col>
               <Col span={8}>
-                <Form.Item label="tbsp weight (g)" name="tbspWeight">
-                  <InputNumber min={0} defaultValue={15} />
+                <Form.Item label="Tbsp weight (g)" name="tbspWeight">
+                  <InputNumber
+                    min={0}
+                    defaultValue={15}
+                    style={{ width: "100%" }}
+                  />
                 </Form.Item>
               </Col>
             </Row>
 
-            <Form.Item label={t("Allergen")} name="allergen">
-              <Select>
+            <Form.Item label={t("Allergens")} name="allergens">
+              <Select mode="multiple" allowClear placeholder="Select allergens">
                 {(options?.allergens || []).map((a) => (
                   <Select.Option key={a} value={a}>
                     {a}
@@ -194,47 +235,32 @@ export default function IngredientPage() {
               </Select>
             </Form.Item>
 
-            <h4>{t("Nutrition (per 100g)")}</h4>
+            <Divider orientation="left">{t("Nutrition (per 100g)")}</Divider>
+
             <Row gutter={12}>
-              <Col span={8}>
-                <Form.Item label="Protein" name="protein">
-                  <InputNumber min={0} />
-                </Form.Item>
-              </Col>
-              <Col span={8}>
-                <Form.Item label="Carbs" name="carbs">
-                  <InputNumber min={0} />
-                </Form.Item>
-              </Col>
-              <Col span={8}>
-                <Form.Item label="Fats" name="fats">
-                  <InputNumber min={0} />
-                </Form.Item>
-              </Col>
-            </Row>
-            <Row gutter={12}>
-              <Col span={8}>
-                <Form.Item label="Calories" name="calories">
-                  <InputNumber min={0} />
-                </Form.Item>
-              </Col>
-              <Col span={8}>
-                <Form.Item label="Fiber" name="fiber">
-                  <InputNumber min={0} />
-                </Form.Item>
-              </Col>
-              <Col span={8}>
-                <Form.Item label="Salt" name="salt">
-                  <InputNumber min={0} />
-                </Form.Item>
-              </Col>
+              {["protein", "carbs", "fats"].map((key) => (
+                <Col span={8} key={key}>
+                  <Form.Item label={t(key)} name={key}>
+                    <InputNumber min={0} style={{ width: "100%" }} />
+                  </Form.Item>
+                </Col>
+              ))}
             </Row>
 
-            <div style={{ display: "flex", gap: 8 }}>
+            <Row gutter={12}>
+              {["calories", "fiber", "salt"].map((key) => (
+                <Col span={8} key={key}>
+                  <Form.Item label={t(key)} name={key}>
+                    <InputNumber min={0} style={{ width: "100%" }} />
+                  </Form.Item>
+                </Col>
+              ))}
+            </Row>
+
+            <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
               <Button
                 onClick={() => {
                   form.resetFields();
-                  setImageData("");
                 }}
               >
                 {t("New")}
@@ -242,24 +268,31 @@ export default function IngredientPage() {
               <Button type="primary" onClick={onSave}>
                 {t("Save")}
               </Button>
-              <Button onClick={onPickImage}>{t("Pick image")}</Button>
             </div>
           </Form>
-        </div>
+        </Card>
 
-        <div style={{ flex: 1 }} className="list">
-          <h4>Ingredients</h4>
+        {/* Right Section - Ingredient List */}
+        <Card
+          title="Ingredients"
+          bordered={false}
+          style={{
+            flex: 1,
+            boxShadow: "0 2px 12px rgba(0,0,0,0.08)",
+            borderRadius: 12,
+          }}
+        >
           <Input.Search
             placeholder="Search ingredients"
             onChange={(e) => onQuery(e.target.value)}
-            style={{ marginBottom: 8 }}
+            style={{ marginBottom: 12 }}
           />
-          <div style={{ maxHeight: 520, overflow: "auto" }}>
+          <div style={{ maxHeight: 560, overflow: "auto" }}>
             {(ingredients || []).map((i) => (
               <div
                 key={i.id}
                 style={{
-                  padding: "8px 6px",
+                  padding: "10px 8px",
                   borderBottom: "1px solid #eee",
                   display: "flex",
                   justifyContent: "space-between",
@@ -267,44 +300,47 @@ export default function IngredientPage() {
                 }}
               >
                 <div>
-                  <div style={{ fontWeight: 700 }}>{i.name}</div>
-                  <div style={{ opacity: 0.65 }}>
-                    {i.category} • {i.unit} • {i.supplier}
+                  <Text strong>{i.name}</Text>
+                  <div style={{ opacity: 0.65, fontSize: 13 }}>
+                    {i.category} • {i.unit} • {i.supplier}{" "}
+                    {i.article && (
+                      <Text type="secondary" style={{ marginLeft: 6 }}>
+                        #{i.article}
+                      </Text>
+                    )}
                   </div>
                 </div>
-                <div style={{ display: "flex", gap: 8 }}>
-                  <Button
-                    onClick={() => {
-                      form.setFieldsValue({
-                        name: i.name,
-                        supplier: i.supplier,
-                        article: i.article,
-                        category: i.category,
-                        unit: i.unit,
-                        prepLoss: i.prepLoss,
-                        price: i.price,
-                        weightPiece: i.weightPiece,
-                        weightPerLiter: i.weightPerLiter,
-                        tspWeight: i.tspWeight,
-                        tbspWeight: i.tbspWeight,
-                        allergen: i.allergen,
-                        protein: i.nutrition?.protein,
-                        carbs: i.nutrition?.carbs,
-                        fats: i.nutrition?.fats,
-                        calories: i.nutrition?.calories,
-                        fiber: i.nutrition?.fiber,
-                        salt: i.nutrition?.salt,
-                      });
-                      setImageData(i.image || "");
-                    }}
-                  >
-                    Load
-                  </Button>
-                </div>
+                <Button
+                  size="small"
+                  onClick={() => {
+                    form.setFieldsValue({
+                      name: i.name,
+                      supplier: i.supplier,
+                      article: i.article,
+                      category: i.category,
+                      unit: i.unit,
+                      prepLoss: i.prepLoss,
+                      price: i.price,
+                      weightPiece: i.weightPiece,
+                      weightPerLiter: i.weightPerLiter,
+                      tspWeight: i.tspWeight,
+                      tbspWeight: i.tbspWeight,
+                      allergens: i.allergens || [],
+                      protein: i.nutrition?.protein,
+                      carbs: i.nutrition?.carbs,
+                      fats: i.nutrition?.fats,
+                      calories: i.nutrition?.calories,
+                      fiber: i.nutrition?.fiber,
+                      salt: i.nutrition?.salt,
+                    });
+                  }}
+                >
+                  Load
+                </Button>
               </div>
             ))}
           </div>
-        </div>
+        </Card>
       </div>
     </div>
   );
