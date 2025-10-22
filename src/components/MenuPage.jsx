@@ -1,16 +1,19 @@
+// src/components/MenuPage.jsx
 import React, { useEffect, useState } from "react";
-import { Button, message, Select, Modal, Input } from "antd";
+import { Button, message, Select, Modal, Input, List } from "antd";
 import { getAll, add } from "../utils/ipc";
 
 export default function MenuPage() {
   const [recipes, setRecipes] = useState([]);
   const [grid, setGrid] = useState({});
   const [menus, setMenus] = useState(["Menu 1", "Menu 2"]);
+  const [savedMenus, setSavedMenus] = useState([]);
   const [activeMenu, setActiveMenu] = useState("Menu 1");
   const [weekOffset, setWeekOffset] = useState(0);
   const [isAddingMenu, setIsAddingMenu] = useState(false);
   const [newMenuName, setNewMenuName] = useState("");
 
+  // 🆕 For recipe selection modal
   const [isAddRecipeModalOpen, setIsAddRecipeModalOpen] = useState(false);
   const [selectedDay, setSelectedDay] = useState("");
   const [selectedMeal, setSelectedMeal] = useState("");
@@ -27,10 +30,12 @@ export default function MenuPage() {
   ];
   const meals = ["Breakfast", "Lunch", "Snack", "Dinner"];
 
+  // ✅ Load recipes & saved menus from DB
   useEffect(() => {
     (async () => {
       const all = await getAll();
       setRecipes(all.recipes || []);
+      setSavedMenus(all.menus || []);
     })();
   }, []);
 
@@ -44,6 +49,7 @@ export default function MenuPage() {
     return `Week of ${start.toLocaleDateString()}`;
   }
 
+  // 🆕 Add recipe (controlled modal)
   function addRecipe(day, meal) {
     setSelectedDay(day);
     setSelectedMeal(meal);
@@ -78,15 +84,35 @@ export default function MenuPage() {
   }
 
   async function save() {
+    const existing = savedMenus.find(
+      (m) => m.menu === activeMenu && m.weekOffset === weekOffset
+    );
+
     const obj = {
-      id: Date.now().toString(),
+      id: existing?.id || Date.now().toString(),
       name: `${activeMenu}_W${weekOffset}`,
       weekOffset,
       menu: activeMenu,
       grid,
     };
+
     await add("menus", obj);
+
+    // Update local list (replace if exists)
+    setSavedMenus((prev) => {
+      const filtered = prev.filter((m) => m.id !== obj.id);
+      return [...filtered, obj];
+    });
+
     message.success(`Menu saved: ${obj.name}`);
+  }
+
+  // ✅ Load saved menu for editing
+  function loadMenu(menu) {
+    setActiveMenu(menu.menu);
+    setWeekOffset(menu.weekOffset);
+    setGrid(menu.grid || {});
+    message.info(`Loaded ${menu.name} for editing`);
   }
 
   function openAddMenuModal() {
@@ -127,7 +153,7 @@ export default function MenuPage() {
           <Select
             value={activeMenu}
             onChange={(v) => setActiveMenu(v)}
-            style={{ width: 160 }}
+            style={{ width: 130 }}
           >
             {menus.map((m) => (
               <Select.Option key={m} value={m}>
@@ -146,7 +172,7 @@ export default function MenuPage() {
 
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <Button onClick={() => setWeekOffset((w) => w - 1)}>◀</Button>
-          <div style={{ minWidth: 160, textAlign: "center" }}>
+          <div style={{ minWidth: 130, textAlign: "center" }}>
             {weekLabel()}
           </div>
           <Button onClick={() => setWeekOffset((w) => w + 1)}>▶</Button>
@@ -154,6 +180,7 @@ export default function MenuPage() {
       </div>
 
       <div style={{ display: "flex", gap: 12 }}>
+        {/* LEFT: Week Grid */}
         <div
           style={{
             flex: 1,
@@ -167,7 +194,7 @@ export default function MenuPage() {
               <div
                 key={d}
                 style={{
-                  minWidth: 160,
+                  minWidth: 130,
                   borderLeft: "1px solid #eee",
                   paddingLeft: 8,
                 }}
@@ -249,22 +276,41 @@ export default function MenuPage() {
           </div>
         </div>
 
+        {/* RIGHT: Saved Menus List */}
         <div
           style={{
-            width: 500,
+            width: 700,
             boxShadow: "0 2px 12px rgba(0,0,0,0.08)",
             borderRadius: 12,
+            padding: 12,
           }}
-          className="list"
         >
-          <h4>Shopping List</h4>
-          <p>
-            Each menu and week is saved separately. Generate shopping lists
-            later by combining recipe ingredient quantities.
-          </p>
+          <h3>Saved Menus</h3>
+          {savedMenus.length === 0 ? (
+            <p style={{ opacity: 0.7 }}>No saved menus yet.</p>
+          ) : (
+            <List
+              size="small"
+              dataSource={[...savedMenus].reverse()}
+              renderItem={(item) => (
+                <List.Item
+                  actions={[
+                    <Button size="small" onClick={() => loadMenu(item)}>
+                      Load
+                    </Button>,
+                  ]}
+                >
+                  <span>
+                    <b>{item.menu}</b> — Week {item.weekOffset}
+                  </span>
+                </List.Item>
+              )}
+            />
+          )}
         </div>
       </div>
 
+      {/* Add Recipe Modal */}
       <Modal
         title={`Add Recipe for ${selectedMeal} (${selectedDay})`}
         open={isAddRecipeModalOpen}
