@@ -12,25 +12,24 @@ import {
   Card,
   Typography,
   Divider,
-  Tooltip,
   Space,
-  Form,
+  Image,
 } from "antd";
 import { getAll, add, pickImage, printToPDF } from "../utils/ipc";
 
 const { Title, Text } = Typography;
 
 export default function RecipePage() {
-  const [form] = Form.useForm();
   const [options, setOptions] = useState(null);
   const [ingredientsDb, setIngredientsDb] = useState([]);
   const [recipe, setRecipe] = useState({
+    name: "",
     ingredients: [],
     steps: [],
     image: "",
-    rating: 50,
+    rating: 100, // default 100%
     asIngredient: false,
-    cookingMethod: "stovetop",
+    youtube: "",
   });
   const [ageCounts, setAgeCounts] = useState({});
 
@@ -66,6 +65,22 @@ export default function RecipePage() {
     });
   }
 
+  // When selecting an ingredient from DB autocomplete, fill unit automatically
+  function selectIngredient(i, name) {
+    const meta = (ingredientsDb || []).find(
+      (x) => x.name.toLowerCase() === (name || "").toLowerCase()
+    );
+    setRecipe((r) => {
+      const cp = JSON.parse(JSON.stringify(r));
+      cp.ingredients[i].name = name;
+      if (meta && meta.unit) cp.ingredients[i].unit = meta.unit;
+      // copy some defaults if present
+      if (meta && meta.prepLoss != null)
+        cp.ingredients[i].prepLoss = meta.prepLoss;
+      return cp;
+    });
+  }
+
   function addStep() {
     setRecipe((r) => ({
       ...r,
@@ -88,16 +103,25 @@ export default function RecipePage() {
     try {
       const name = (recipe.name || "").trim();
       if (!name) return message.error("Recipe name required");
+      // Ensure rating default
+      if (!recipe.rating && recipe.rating !== 0) recipe.rating = 100;
       await add("recipes", recipe);
       message.success("Recipe saved");
     } catch (e) {
-      message.error(e.message || "Error");
+      message.error(e.message || "Error saving recipe");
     }
   }
 
   async function pickImg() {
-    const res = await pickImage();
-    if (!res.canceled) setRecipe((r) => ({ ...r, image: res.data }));
+    try {
+      const res = await pickImage();
+      if (!res.canceled) {
+        setRecipe((r) => ({ ...r, image: res.data }));
+        message.success("Image attached");
+      }
+    } catch (e) {
+      message.error("Image pick failed");
+    }
   }
 
   function setAgeCount(label, count) {
@@ -172,6 +196,66 @@ export default function RecipePage() {
 
   const scaled = computeScaledIngredients();
 
+  // compute recipe nutrition totals from ingredients' nutrition per 100g
+  function computeNutritionTotals() {
+    const totals = {
+      protein: 0,
+      carbs: 0,
+      fats: 0,
+      calories: 0,
+      fiber: 0,
+      salt: 0,
+    };
+    for (const ing of recipe.ingredients || []) {
+      const meta = (ingredientsDb || []).find(
+        (x) => x.name.toLowerCase() === (ing.name || "").toLowerCase()
+      );
+      if (!meta) continue;
+      // compute qty in grams
+      const qty = Number(ing.qty || 0);
+      const unit = ing.unit || "g";
+      let qtyGrams =
+        unit === "kg"
+          ? qty * 1000
+          : unit === "l"
+          ? qty * (meta.weightPerLiter || 1000)
+          : qty;
+      // nutrition fields are per 100g in ingredient meta (assumption used in your data model)
+      const factor = qtyGrams / 100;
+      const n = meta.nutrition || {};
+      totals.protein += (n.protein || 0) * factor;
+      totals.carbs += (n.carbs || 0) * factor;
+      totals.fats += (n.fats || 0) * factor;
+      totals.calories += (n.calories || 0) * factor;
+      totals.fiber += (n.fiber || 0) * factor;
+      totals.salt += (n.salt || 0) * factor;
+    }
+    // round
+    Object.keys(totals).forEach(
+      (k) => (totals[k] = Math.round((totals[k] + Number.EPSILON) * 100) / 100)
+    );
+    return totals;
+  }
+
+  const nutritionTotals = computeNutritionTotals();
+
+  // print handler (await result and show message)
+  async function onPrint() {
+    try {
+      const html = `<html><body><h1>${
+        recipe.name || ""
+      }</h1><h3>Ingredients</h3><ul>${(recipe.ingredients || [])
+        .map((i) => `<li>${i.qty} ${i.unit} ${i.name}</li>`)
+        .join("")}</ul></body></html>`;
+      const res = await printToPDF(html);
+      if (res && res.canceled === false)
+        message.success("PDF saved: " + res.path);
+      else if (res && res.canceled) message.info("PDF cancelled");
+    } catch (e) {
+      message.error("Print failed: " + (e.message || ""));
+    }
+  }
+
   return (
     <div className="page" style={{ padding: 20 }}>
       <Title level={3}>Recipe</Title>
@@ -185,9 +269,8 @@ export default function RecipePage() {
               borderRadius: 12,
             }}
           >
-            {/* Recipe Name + Meta */}
             <Row gutter={12} align="middle">
-              <Col span={14}>
+              <Col span={10}>
                 <Text strong>Recipe Name</Text>
                 <Input
                   placeholder="e.g. 'Fried Squid' or supplier code"
@@ -221,29 +304,31 @@ export default function RecipePage() {
                     </Select.Option>
                   ))}
                 </Select>
+                <Text type="secondary" style={{ display: "block" }}>
+                  Choose Category
+                </Text>
               </Col>
-              <Col span={5}>
-                <Text strong>Cooking Method</Text>
-                <Select
-                  style={{ width: "100%", marginTop: 4 }}
-                  value={recipe.cookingMethod || "stovetop"}
-                  onChange={(v) =>
-                    setRecipe((r) => ({ ...r, cookingMethod: v }))
+
+              <Col span={9}>
+                <Text strong>YouTube link</Text>
+                <Input
+                  placeholder="https://youtube.com/..."
+                  value={recipe.youtube || ""}
+                  onChange={(e) =>
+                    setRecipe((r) => ({ ...r, youtube: e.target.value }))
                   }
-                >
-                  {["stovetop", "oven", "grill", "fry", "steam"].map((m) => (
-                    <Select.Option key={m} value={m}>
-                      {m.charAt(0).toUpperCase() + m.slice(1)}
-                    </Select.Option>
-                  ))}
-                </Select>
+                  style={{ marginTop: 4 }}
+                />
+                <Text type="secondary" style={{ display: "block" }}>
+                  (optional)
+                </Text>
               </Col>
             </Row>
 
             <Divider />
 
-            {/* Ingredients Section */}
             <Title level={5}>Ingredients</Title>
+
             <Row gutter={8} style={{ marginBottom: 6 }}>
               {recipe.ingredients.length !== 0 && (
                 <>
@@ -262,7 +347,7 @@ export default function RecipePage() {
                   <Col span={4}>
                     <Text type="secondary">Cooking Loss (%)</Text>
                   </Col>
-                  <Col span={1}>{/* <Text type="secondary">—</Text> */}</Col>
+                  <Col span={1} />
                 </>
               )}
             </Row>
@@ -275,10 +360,24 @@ export default function RecipePage() {
                 align="middle"
               >
                 <Col span={7}>
-                  <Input
-                    value={ing.name}
-                    onChange={(e) => updateIng(idx, "name", e.target.value)}
-                    placeholder="Ingredient"
+                  {/* Autocomplete: choose existing ingredient to auto-fill unit */}
+                  <Select
+                    showSearch
+                    allowClear
+                    placeholder="Ingredient (type to search)"
+                    value={ing.name || undefined}
+                    onSearch={() => {}}
+                    onChange={(value) => selectIngredient(idx, value)}
+                    style={{ width: "100%" }}
+                    filterOption={(input, option) =>
+                      option?.value
+                        ?.toLowerCase()
+                        .includes((input || "").toLowerCase())
+                    }
+                    options={(ingredientsDb || []).map((it) => ({
+                      label: `${it.name} — ${it.unit || ""}`,
+                      value: it.name,
+                    }))}
                   />
                 </Col>
                 <Col span={4}>
@@ -341,7 +440,6 @@ export default function RecipePage() {
 
             <Divider />
 
-            {/* Steps Section */}
             <Title level={5}>Preparation Steps</Title>
             {recipe.steps.length !== 0 && (
               <Row gutter={8} style={{ marginBottom: 6 }}>
@@ -399,7 +497,6 @@ export default function RecipePage() {
                     style={{ width: "100%" }}
                     value={s.method || ""}
                     onChange={(v) => updateStep(i, "method", v)}
-                    placeholder="Method"
                   >
                     {["sear", "boil", "bake", "fry", "steam"].map((m) => (
                       <Select.Option key={m} value={m}>
@@ -433,18 +530,7 @@ export default function RecipePage() {
                 Save
               </Button>
               <Button onClick={pickImg}>Pick image</Button>
-              <Button
-                onClick={() => {
-                  const html = `<html><body><h1>${
-                    recipe.name || ""
-                  }</h1><h3>Ingredients</h3><ul>${(recipe.ingredients || [])
-                    .map((i) => `<li>${i.qty} ${i.unit} ${i.name}</li>`)
-                    .join("")}</ul></body></html>`;
-                  printToPDF(html);
-                }}
-              >
-                Print
-              </Button>
+              <Button onClick={onPrint}>Print</Button>
               <Checkbox
                 checked={recipe.asIngredient}
                 onChange={(e) =>
@@ -454,6 +540,16 @@ export default function RecipePage() {
                 Recipe can be used as ingredient
               </Checkbox>
             </Space>
+
+            {/* image preview */}
+            {recipe.image ? (
+              <div style={{ marginTop: 12 }}>
+                <Text strong>Image preview</Text>
+                <div style={{ marginTop: 6 }}>
+                  <Image src={recipe.image} alt="recipe" width={180} />
+                </div>
+              </div>
+            ) : null}
           </Card>
         </Col>
 
@@ -493,7 +589,7 @@ export default function RecipePage() {
             <Divider />
 
             <Text strong>Scaled Ingredients</Text>
-            <div style={{ maxHeight: 260, overflow: "auto", marginTop: 8 }}>
+            <div style={{ maxHeight: 200, overflow: "auto", marginTop: 8 }}>
               {scaled.length === 0 && (
                 <div style={{ opacity: 0.7 }}>
                   Add ingredients & age counts to see scaled quantities
@@ -515,12 +611,24 @@ export default function RecipePage() {
 
             <Divider />
 
+            <Text strong>Totals (nutrition)</Text>
+            <div style={{ marginTop: 8 }}>
+              <div>Calories: {nutritionTotals.calories} kcal</div>
+              <div>Protein: {nutritionTotals.protein} g</div>
+              <div>Carbs: {nutritionTotals.carbs} g</div>
+              <div>Fats: {nutritionTotals.fats} g</div>
+              <div>Fiber: {nutritionTotals.fiber} g</div>
+              <div>Salt: {nutritionTotals.salt} g</div>
+            </div>
+
+            <Divider />
+
             <Text strong>Rating</Text>
             <div style={{ marginTop: 8 }}>
               <InputNumber
                 min={0}
                 max={100}
-                value={recipe.rating || 50}
+                value={recipe.rating || 100}
                 onChange={(v) => setRecipe((r) => ({ ...r, rating: v }))}
               />{" "}
               %

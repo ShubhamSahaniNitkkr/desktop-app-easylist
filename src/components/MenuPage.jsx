@@ -1,14 +1,14 @@
 // src/components/MenuPage.jsx
 import React, { useEffect, useState } from "react";
-import { Button, message, Select, Modal, Input } from "antd";
+import { Button, message, Select, Modal, Input, Row, Col } from "antd";
 import { getAll, add } from "../utils/ipc";
 
 export default function MenuPage() {
   const [recipes, setRecipes] = useState([]);
   const [grid, setGrid] = useState({});
-  const [menus, setMenus] = useState([]);
-  const [activeMenu, setActiveMenu] = useState("Room 1");
-  const [week, setWeek] = useState(1);
+  const [menus, setMenus] = useState(["Menu 1", "Menu 2"]);
+  const [activeMenu, setActiveMenu] = useState("Menu 1");
+  const [weekOffset, setWeekOffset] = useState(0); // 0 = current week, +/- shift by weeks
   const [isAddingMenu, setIsAddingMenu] = useState(false);
   const [newMenuName, setNewMenuName] = useState("");
 
@@ -27,9 +27,20 @@ export default function MenuPage() {
     (async () => {
       const all = await getAll();
       setRecipes(all.recipes || []);
-      setMenus(["Room 1", "Room 2"]);
+      // keep stored menus from DB (future improvement)
     })();
   }, []);
+
+  function weekLabel() {
+    // simple week label: Week number offset
+    const now = new Date();
+    const start = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate() + weekOffset * 7
+    );
+    return `Week of ${start.toLocaleDateString()}`;
+  }
 
   function addRecipe(day, meal) {
     Modal.confirm({
@@ -42,7 +53,7 @@ export default function MenuPage() {
           onChange={(value) => {
             setGrid((g) => {
               const cp = { ...g };
-              const key = `${activeMenu}__Week${week}__${day}__${meal}`;
+              const key = `${activeMenu}__W${weekOffset}__${day}__${meal}`;
               cp[key] = [...(cp[key] || []), value];
               return cp;
             });
@@ -64,7 +75,7 @@ export default function MenuPage() {
   function removeRecipe(day, meal, recipeName) {
     setGrid((g) => {
       const cp = { ...g };
-      const key = `${activeMenu}__Week${week}__${day}__${meal}`;
+      const key = `${activeMenu}__W${weekOffset}__${day}__${meal}`;
       cp[key] = (cp[key] || []).filter((r) => r !== recipeName);
       return cp;
     });
@@ -73,13 +84,13 @@ export default function MenuPage() {
   async function save() {
     const obj = {
       id: Date.now().toString(),
-      name: `${activeMenu}_Week${week}`,
-      week,
+      name: `${activeMenu}_W${weekOffset}`,
+      weekOffset,
       menu: activeMenu,
       grid,
     };
     await add("menus", obj);
-    message.success(`Menu for ${activeMenu} - Week ${week} saved`);
+    message.success(`Menu saved: ${obj.name}`);
   }
 
   function openAddMenuModal() {
@@ -116,7 +127,7 @@ export default function MenuPage() {
         }}
       >
         <div>
-          <span style={{ marginRight: 6 }}>Menu (Room):</span>
+          <span style={{ marginRight: 6 }}>Menu:</span>
           <Select
             value={activeMenu}
             onChange={(v) => setActiveMenu(v)}
@@ -137,19 +148,12 @@ export default function MenuPage() {
           </Button>
         </div>
 
-        <div>
-          <span style={{ marginRight: 6 }}>Week:</span>
-          <Select
-            value={week}
-            onChange={(v) => setWeek(v)}
-            style={{ width: 100 }}
-          >
-            {[1, 2, 3, 4].map((w) => (
-              <Select.Option key={w} value={w}>
-                Week {w}
-              </Select.Option>
-            ))}
-          </Select>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <Button onClick={() => setWeekOffset((w) => w - 1)}>◀</Button>
+          <div style={{ minWidth: 160, textAlign: "center" }}>
+            {weekLabel()}
+          </div>
+          <Button onClick={() => setWeekOffset((w) => w + 1)}>▶</Button>
         </div>
       </div>
 
@@ -174,7 +178,7 @@ export default function MenuPage() {
               >
                 <div style={{ fontWeight: 700, fontSize: 15 }}>{d}</div>
                 {meals.map((m) => {
-                  const key = `${activeMenu}__Week${week}__${d}__${m}`;
+                  const key = `${activeMenu}__W${weekOffset}__${d}__${m}`;
                   return (
                     <div
                       key={m}
@@ -259,9 +263,8 @@ export default function MenuPage() {
         >
           <h4>Shopping List</h4>
           <p>
-            Each menu (Room) and week is saved separately. You can later
-            generate a shopping list by combining all recipes’ ingredient
-            quantities.
+            Each menu and week is saved separately. Generate shopping lists
+            later by combining recipe ingredient quantities.
           </p>
         </div>
       </div>
@@ -275,7 +278,7 @@ export default function MenuPage() {
         okText="Add"
       >
         <Input
-          placeholder="Enter menu name (e.g., Room 3)"
+          placeholder="Enter menu name (e.g., Menu 3)"
           value={newMenuName}
           onChange={(e) => setNewMenuName(e.target.value)}
         />

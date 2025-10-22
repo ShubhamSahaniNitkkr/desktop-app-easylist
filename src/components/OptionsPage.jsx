@@ -5,11 +5,9 @@ import {
   Button,
   Select,
   message,
-  Table,
   Popconfirm,
   Row,
   Col,
-  Space,
   InputNumber,
   Modal,
 } from "antd";
@@ -18,26 +16,30 @@ import { getAll, update, exportJSON, importJSON } from "../utils/ipc";
 export default function OptionsPage({ refreshOptions }) {
   const [options, setOptions] = useState(null);
 
-  // local fields for quick add
+  // quick add fields
   const [newCat, setNewCat] = useState("");
   const [newSup, setNewSup] = useState("");
+  const [newAllergen, setNewAllergen] = useState("");
   const [ageLabel, setAgeLabel] = useState("");
   const [ageCategory, setAgeCategory] = useState("");
   const [agePortion, setAgePortion] = useState("");
 
-  // profiles (number of people / week)
-  const [profiles, setProfiles] = useState([]); // local copy
+  // profiles
+  const [profiles, setProfiles] = useState([]);
   const [activeProfile, setActiveProfile] = useState("");
   const [newProfileName, setNewProfileName] = useState("");
   const [showAddProfile, setShowAddProfile] = useState(false);
+
+  const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
+  const meals = ["Breakfast", "Lunch", "Snack", "Dinner"];
 
   useEffect(() => {
     (async () => {
       const all = await getAll();
       const opts = all.options || {};
-      // ensure arrays exist
       opts.categories = opts.categories || [];
       opts.suppliers = opts.suppliers || [];
+      opts.allergens = opts.allergens || [];
       opts.standardPortions = opts.standardPortions || [];
       opts.profiles = opts.profiles || [];
       setOptions(opts);
@@ -48,12 +50,11 @@ export default function OptionsPage({ refreshOptions }) {
     })();
   }, []);
 
-  // Categories
   function addCategory() {
-    if (!newCat || !newCat.trim()) return;
+    if (!newCat.trim()) return;
     const cat = newCat.trim();
     if ((options.categories || []).includes(cat)) {
-      message.warning("Category already exists");
+      message.warning("Category exists");
       setNewCat("");
       return;
     }
@@ -67,12 +68,11 @@ export default function OptionsPage({ refreshOptions }) {
     }));
   }
 
-  // Suppliers
   function addSupplier() {
-    if (!newSup || !newSup.trim()) return;
+    if (!newSup.trim()) return;
     const s = newSup.trim();
     if ((options.suppliers || []).includes(s)) {
-      message.warning("Supplier already exists");
+      message.warning("Supplier exists");
       setNewSup("");
       return;
     }
@@ -86,10 +86,27 @@ export default function OptionsPage({ refreshOptions }) {
     }));
   }
 
-  // Standard portions
+  function addAllergen() {
+    if (!newAllergen.trim()) return;
+    const a = newAllergen.trim();
+    if ((options.allergens || []).includes(a)) {
+      message.warning("Allergen exists");
+      setNewAllergen("");
+      return;
+    }
+    setOptions((o) => ({ ...o, allergens: [...(o.allergens || []), a] }));
+    setNewAllergen("");
+  }
+  function removeAllergen(a) {
+    setOptions((o) => ({
+      ...o,
+      allergens: (o.allergens || []).filter((x) => x !== a),
+    }));
+  }
+
   function addStandardPortion() {
     if (!ageLabel || !ageCategory || !agePortion)
-      return message.error("Please fill all fields for standard portion");
+      return message.error("Please fill all fields");
     const id = Date.now().toString();
     const newRow = {
       id,
@@ -112,11 +129,7 @@ export default function OptionsPage({ refreshOptions }) {
     }));
   }
 
-  // Profiles (people per meal / age group) — simple structure:
-  // profile = { name: "vacation", table: { Monday: { Breakfast: { label:count, ... }, ...}, ... } }
-  const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
-  const meals = ["Breakfast", "Lunch", "Snack", "Dinner"];
-
+  // profiles
   function makeEmptyTable(labels) {
     const table = {};
     days.forEach((d) => {
@@ -137,8 +150,7 @@ export default function OptionsPage({ refreshOptions }) {
   }
 
   function confirmAddProfile() {
-    if (!newProfileName || !newProfileName.trim())
-      return message.error("Enter profile name");
+    if (!newProfileName.trim()) return message.error("Enter profile name");
     const name = newProfileName.trim();
     if ((profiles || []).some((p) => p.name === name))
       return message.warning("Profile exists");
@@ -172,12 +184,11 @@ export default function OptionsPage({ refreshOptions }) {
     setOptions((o) => ({ ...o, profiles: next }));
   }
 
-  // SQL query placeholder (point 2)
+  // SQL (placeholder)
   function setSQLQuery(value) {
     setOptions((o) => ({ ...o, sqlQuery: value }));
   }
 
-  // Export / Import
   async function onExport() {
     const res = await exportJSON();
     if (!res.canceled) message.success("Exported to " + res.path);
@@ -191,11 +202,9 @@ export default function OptionsPage({ refreshOptions }) {
     }
   }
 
-  // Save options to DB
   async function save() {
     try {
       await update("options", null, options);
-      // ensure profiles also saved
       if (options) {
         options.profiles = profiles;
         await update("options", null, options);
@@ -208,25 +217,6 @@ export default function OptionsPage({ refreshOptions }) {
   }
 
   if (!options) return null;
-
-  // columns for standard portions table
-  const columns = [
-    { title: "Label", dataIndex: "label", key: "label" },
-    { title: "Category", dataIndex: "category", key: "category" },
-    { title: "Grams", dataIndex: "grams", key: "grams" },
-    {
-      title: "Action",
-      key: "action",
-      render: (_, rec) => (
-        <Popconfirm
-          title="Delete standard portion?"
-          onConfirm={() => removeStandardPortion(rec.id)}
-        >
-          <a>Delete</a>
-        </Popconfirm>
-      ),
-    },
-  ];
 
   return (
     <div className="page">
@@ -264,14 +254,21 @@ export default function OptionsPage({ refreshOptions }) {
           {/* Categories */}
           <div style={{ marginTop: 12 }}>
             <h4>Categories</h4>
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 6,
+              }}
+            >
               {(options.categories || []).map((c, i) => (
                 <div
                   key={i}
                   style={{
                     display: "flex",
-                    justifyContent: "space-between",
                     alignItems: "center",
+                    gap: 8,
+                    justifyContent: "flex-start",
                   }}
                 >
                   <div>{c}</div>
@@ -279,7 +276,7 @@ export default function OptionsPage({ refreshOptions }) {
                     title={`Remove category "${c}"?`}
                     onConfirm={() => removeCategory(c)}
                   >
-                    <a>Remove</a>
+                    <a style={{ color: "red" }}>Remove</a>
                   </Popconfirm>
                 </div>
               ))}
@@ -305,18 +302,14 @@ export default function OptionsPage({ refreshOptions }) {
               {(options.suppliers || []).map((s, i) => (
                 <div
                   key={i}
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                  }}
+                  style={{ display: "flex", alignItems: "center", gap: 8 }}
                 >
-                  <div>{s}</div>
+                  <div style={{ flex: 1 }}>{s}</div>
                   <Popconfirm
                     title={`Remove supplier "${s}"?`}
                     onConfirm={() => removeSupplier(s)}
                   >
-                    <a>Remove</a>
+                    <a style={{ color: "red" }}>Remove</a>
                   </Popconfirm>
                 </div>
               ))}
@@ -335,12 +328,45 @@ export default function OptionsPage({ refreshOptions }) {
             </Row>
           </div>
 
+          {/* Allergens */}
+          <div style={{ marginTop: 12 }}>
+            <h4>Allergens</h4>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {(options.allergens || []).map((a, i) => (
+                <div
+                  key={i}
+                  style={{ display: "flex", alignItems: "center", gap: 8 }}
+                >
+                  <div>{a}</div>
+                  <Popconfirm
+                    title={`Remove allergen "${a}"?`}
+                    onConfirm={() => removeAllergen(a)}
+                  >
+                    <a style={{ color: "red" }}>Remove</a>
+                  </Popconfirm>
+                </div>
+              ))}
+            </div>
+            <Row gutter={8} style={{ marginTop: 8 }}>
+              <Col>
+                <Input
+                  value={newAllergen}
+                  onChange={(e) => setNewAllergen(e.target.value)}
+                  placeholder="New allergen"
+                />
+              </Col>
+              <Col>
+                <Button onClick={addAllergen}>Add</Button>
+              </Col>
+            </Row>
+          </div>
+
           {/* Standard Portions */}
           <div style={{ marginTop: 12 }}>
-            <h4>Standard portions (by age / category)</h4>
+            <h4>Standard portions (label → category → grams)</h4>
             <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
               <Input
-                placeholder="Label (e.g. Teen / Adult)"
+                placeholder="Label (e.g. 3–5 years)"
                 value={ageLabel}
                 onChange={(e) => setAgeLabel(e.target.value)}
               />
@@ -365,22 +391,32 @@ export default function OptionsPage({ refreshOptions }) {
               <Button onClick={addStandardPortion}>Add</Button>
             </div>
 
-            <Table
-              columns={columns}
-              dataSource={options.standardPortions || []}
-              rowKey="id"
-              pagination={false}
-            />
-
-            <div style={{ marginTop: 12 }}>
-              <small style={{ color: "#666" }}>
-                Standard portions are used for automatic recipe scaling. Each
-                row maps an age label and a category to grams.
-              </small>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {(options.standardPortions || []).map((p) => (
+                <div
+                  key={p.id}
+                  style={{
+                    display: "grid",
+                    gridTemplateColumns: "1fr 1fr 100px 60px",
+                    gap: 8,
+                    alignItems: "center",
+                  }}
+                >
+                  <div>{p.label}</div>
+                  <div>{p.category}</div>
+                  <div>{p.grams} g</div>
+                  <Popconfirm
+                    title="Delete?"
+                    onConfirm={() => removeStandardPortion(p.id)}
+                  >
+                    <a style={{ color: "red" }}>Delete</a>
+                  </Popconfirm>
+                </div>
+              ))}
             </div>
           </div>
 
-          {/* Profiles: people per meal */}
+          {/* Profiles */}
           <div style={{ marginTop: 18 }}>
             <h4>Profiles (people per meal / age group)</h4>
             <div
@@ -413,7 +449,6 @@ export default function OptionsPage({ refreshOptions }) {
               </Popconfirm>
             </div>
 
-            {/* profile grid editor */}
             {activeProfile ? (
               <div
                 style={{
@@ -439,7 +474,7 @@ export default function OptionsPage({ refreshOptions }) {
                     marginBottom: 8,
                   }}
                 >
-                  <div></div>
+                  <div />
                   {(options.standardPortions || []).map((sp) => (
                     <div key={sp.id} style={{ fontWeight: 600 }}>
                       {sp.label}
@@ -501,10 +536,8 @@ export default function OptionsPage({ refreshOptions }) {
               </div>
             )}
           </div>
-
-          {/* SQL Query / Point 2 placeholder */}
-          {/* <div style={{ marginTop: 18 }}>
-            <h4>Point 2 — SQL Query (placeholder)</h4>
+          <div style={{ marginTop: 18 }}>
+            <h4>SQL Query</h4>
             <small style={{ color: "#666" }}>
               Paste or edit the SQL query used by import/export/advanced
               processing (you mentioned this in the image).
@@ -515,7 +548,7 @@ export default function OptionsPage({ refreshOptions }) {
               onChange={(e) => setSQLQuery(e.target.value)}
               style={{ marginTop: 8 }}
             />
-          </div> */}
+          </div>
 
           {/* Actions */}
           <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
@@ -530,18 +563,12 @@ export default function OptionsPage({ refreshOptions }) {
         <div style={{ width: 360 }} className="list">
           <h4>Advanced / Notes</h4>
           <p>
-            Allergens and categories can be extended here. The standard portions
-            table is used by the recipe scaling system (first ingredient is
-            reference).
-          </p>
-          <p style={{ color: "#666" }}>
-            Profiles store the number of people per meal/day/age-group (useful
-            for weekly planning & accurate shopping lists).
+            Allergens and categories can be extended here. Standard portions are
+            used by recipe scaling.
           </p>
         </div>
       </div>
 
-      {/* Add profile modal */}
       <Modal
         title="Add Profile"
         open={showAddProfile}
@@ -549,7 +576,7 @@ export default function OptionsPage({ refreshOptions }) {
         onOk={confirmAddProfile}
       >
         <Input
-          placeholder="Profile name (e.g., 'Normal week' or 'Vacation')"
+          placeholder="Profile name (e.g., 'Normal week')"
           value={newProfileName}
           onChange={(e) => setNewProfileName(e.target.value)}
         />
