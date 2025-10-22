@@ -1,6 +1,5 @@
-// src/components/MenuPage.jsx
 import React, { useEffect, useState } from "react";
-import { Button, message, Select, Modal, Input, Row, Col } from "antd";
+import { Button, message, Select, Modal, Input } from "antd";
 import { getAll, add } from "../utils/ipc";
 
 export default function MenuPage() {
@@ -8,9 +7,14 @@ export default function MenuPage() {
   const [grid, setGrid] = useState({});
   const [menus, setMenus] = useState(["Menu 1", "Menu 2"]);
   const [activeMenu, setActiveMenu] = useState("Menu 1");
-  const [weekOffset, setWeekOffset] = useState(0); // 0 = current week, +/- shift by weeks
+  const [weekOffset, setWeekOffset] = useState(0);
   const [isAddingMenu, setIsAddingMenu] = useState(false);
   const [newMenuName, setNewMenuName] = useState("");
+
+  const [isAddRecipeModalOpen, setIsAddRecipeModalOpen] = useState(false);
+  const [selectedDay, setSelectedDay] = useState("");
+  const [selectedMeal, setSelectedMeal] = useState("");
+  const [selectedRecipe, setSelectedRecipe] = useState("");
 
   const days = [
     "Monday",
@@ -27,12 +31,10 @@ export default function MenuPage() {
     (async () => {
       const all = await getAll();
       setRecipes(all.recipes || []);
-      // keep stored menus from DB (future improvement)
     })();
   }, []);
 
   function weekLabel() {
-    // simple week label: Week number offset
     const now = new Date();
     const start = new Date(
       now.getFullYear(),
@@ -43,33 +45,27 @@ export default function MenuPage() {
   }
 
   function addRecipe(day, meal) {
-    Modal.confirm({
-      title: "Add Recipe",
-      content: (
-        <Select
-          showSearch
-          placeholder="Select a recipe"
-          style={{ width: "100%", marginTop: 8 }}
-          onChange={(value) => {
-            setGrid((g) => {
-              const cp = { ...g };
-              const key = `${activeMenu}__W${weekOffset}__${day}__${meal}`;
-              cp[key] = [...(cp[key] || []), value];
-              return cp;
-            });
-            Modal.destroyAll();
-          }}
-        >
-          {(recipes || []).map((r) => (
-            <Select.Option key={r.name} value={r.name}>
-              {r.name}
-            </Select.Option>
-          ))}
-        </Select>
-      ),
-      okButtonProps: { style: { display: "none" } },
-      cancelButtonProps: { style: { display: "none" } },
+    setSelectedDay(day);
+    setSelectedMeal(meal);
+    setSelectedRecipe("");
+    setIsAddRecipeModalOpen(true);
+  }
+
+  function confirmAddRecipe() {
+    if (!selectedRecipe) {
+      message.error("Please select a recipe");
+      return;
+    }
+    setGrid((g) => {
+      const cp = { ...g };
+      const key = `${activeMenu}__W${weekOffset}__${selectedDay}__${selectedMeal}`;
+      cp[key] = [...(cp[key] || []), selectedRecipe];
+      return cp;
     });
+    setIsAddRecipeModalOpen(false);
+    message.success(
+      `Added ${selectedRecipe} to ${selectedMeal} (${selectedDay})`
+    );
   }
 
   function removeRecipe(day, meal, recipeName) {
@@ -269,7 +265,26 @@ export default function MenuPage() {
         </div>
       </div>
 
-      {/* Modal for new menu */}
+      <Modal
+        title={`Add Recipe for ${selectedMeal} (${selectedDay})`}
+        open={isAddRecipeModalOpen}
+        onOk={confirmAddRecipe}
+        onCancel={() => setIsAddRecipeModalOpen(false)}
+        okText="Add"
+      >
+        <Select
+          placeholder="Select recipe"
+          value={selectedRecipe}
+          onChange={(v) => setSelectedRecipe(v)}
+          style={{ width: "100%", marginTop: 8 }}
+          showSearch
+          options={(recipes || []).map((r) => ({
+            label: r.name,
+            value: r.name,
+          }))}
+        />
+      </Modal>
+
       <Modal
         title="Add New Menu"
         open={isAddingMenu}

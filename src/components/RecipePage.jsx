@@ -14,6 +14,7 @@ import {
   Divider,
   Space,
   Image,
+  List,
 } from "antd";
 import { getAll, add, pickImage, printToPDF } from "../utils/ipc";
 
@@ -22,12 +23,13 @@ const { Title, Text } = Typography;
 export default function RecipePage() {
   const [options, setOptions] = useState(null);
   const [ingredientsDb, setIngredientsDb] = useState([]);
+  const [recipes, setRecipes] = useState([]);
   const [recipe, setRecipe] = useState({
     name: "",
     ingredients: [],
     steps: [],
     image: "",
-    rating: 100, // default 100%
+    rating: 100,
     asIngredient: false,
     youtube: "",
   });
@@ -36,8 +38,10 @@ export default function RecipePage() {
   useEffect(() => {
     (async () => {
       const all = await getAll();
+      console.log(all, "all");
       setOptions(all.options || {});
       setIngredientsDb(all.ingredients || []);
+      setRecipes(all.recipes || []);
     })();
   }, []);
 
@@ -65,7 +69,6 @@ export default function RecipePage() {
     });
   }
 
-  // When selecting an ingredient from DB autocomplete, fill unit automatically
   function selectIngredient(i, name) {
     const meta = (ingredientsDb || []).find(
       (x) => x.name.toLowerCase() === (name || "").toLowerCase()
@@ -74,7 +77,6 @@ export default function RecipePage() {
       const cp = JSON.parse(JSON.stringify(r));
       cp.ingredients[i].name = name;
       if (meta && meta.unit) cp.ingredients[i].unit = meta.unit;
-      // copy some defaults if present
       if (meta && meta.prepLoss != null)
         cp.ingredients[i].prepLoss = meta.prepLoss;
       return cp;
@@ -103,10 +105,18 @@ export default function RecipePage() {
     try {
       const name = (recipe.name || "").trim();
       if (!name) return message.error("Recipe name required");
-      // Ensure rating default
-      if (!recipe.rating && recipe.rating !== 0) recipe.rating = 100;
-      await add("recipes", recipe);
-      message.success("Recipe saved");
+      const recipeCopy = JSON.parse(JSON.stringify(recipe));
+      if (!recipeCopy.rating && recipeCopy.rating !== 0)
+        recipeCopy.rating = 100;
+      await add("recipes", recipeCopy);
+      message.success("Recipe saved successfully");
+      console.log("Recipe saved");
+      setRecipes((r) => {
+        const existing = r.filter(
+          (x) => x.name.toLowerCase() !== recipeCopy.name.toLowerCase()
+        );
+        return [...existing, recipeCopy];
+      });
     } catch (e) {
       message.error(e.message || "Error saving recipe");
     }
@@ -128,26 +138,22 @@ export default function RecipePage() {
     setAgeCounts((ac) => ({ ...ac, [label]: Number(count) }));
   }
 
-  // scaling logic (unchanged)
   function computeScaledIngredients() {
     const std = options?.standardPortions || [];
     const ingredientsList = recipe.ingredients || [];
     if (ingredientsList.length === 0) return [];
-
     const ref = ingredientsList[0];
     const refIngredientMeta = (ingredientsDb || []).find(
       (i) => i.name.toLowerCase() === (ref.name || "").toLowerCase()
     );
     const refCategory = refIngredientMeta?.category || options?.categories?.[0];
     let totalRefGrams = 0;
-
     (std || []).forEach((s) => {
       if (s.category === refCategory) {
         const cnt = Number(ageCounts[s.label] || 0);
         totalRefGrams += (s.grams || 0) * cnt;
       }
     });
-
     if (totalRefGrams === 0) {
       const totalPeople = Object.values(ageCounts).reduce(
         (a, b) => a + Number(b || 0),
@@ -158,7 +164,6 @@ export default function RecipePage() {
           .grams || 150;
       totalRefGrams = totalPeople * adultPortion;
     }
-
     const refQty = Number(ref.qty) || 0;
     const unitRef = ref.unit || "g";
     const refQtyInGrams =
@@ -168,7 +173,6 @@ export default function RecipePage() {
         ? refQty * (refIngredientMeta?.weightPerLiter || 1000)
         : refQty;
     const ratio = refQtyInGrams > 0 ? totalRefGrams / refQtyInGrams : 1;
-
     return ingredientsList.map((i) => {
       const qty = Number(i.qty || 0);
       const unit = i.unit || "g";
@@ -196,7 +200,6 @@ export default function RecipePage() {
 
   const scaled = computeScaledIngredients();
 
-  // compute recipe nutrition totals from ingredients' nutrition per 100g
   function computeNutritionTotals() {
     const totals = {
       protein: 0,
@@ -211,7 +214,6 @@ export default function RecipePage() {
         (x) => x.name.toLowerCase() === (ing.name || "").toLowerCase()
       );
       if (!meta) continue;
-      // compute qty in grams
       const qty = Number(ing.qty || 0);
       const unit = ing.unit || "g";
       let qtyGrams =
@@ -220,7 +222,6 @@ export default function RecipePage() {
           : unit === "l"
           ? qty * (meta.weightPerLiter || 1000)
           : qty;
-      // nutrition fields are per 100g in ingredient meta (assumption used in your data model)
       const factor = qtyGrams / 100;
       const n = meta.nutrition || {};
       totals.protein += (n.protein || 0) * factor;
@@ -230,7 +231,6 @@ export default function RecipePage() {
       totals.fiber += (n.fiber || 0) * factor;
       totals.salt += (n.salt || 0) * factor;
     }
-    // round
     Object.keys(totals).forEach(
       (k) => (totals[k] = Math.round((totals[k] + Number.EPSILON) * 100) / 100)
     );
@@ -239,7 +239,6 @@ export default function RecipePage() {
 
   const nutritionTotals = computeNutritionTotals();
 
-  // print handler (await result and show message)
   async function onPrint() {
     try {
       const html = `<html><body><h1>${
@@ -248,12 +247,16 @@ export default function RecipePage() {
         .map((i) => `<li>${i.qty} ${i.unit} ${i.name}</li>`)
         .join("")}</ul></body></html>`;
       const res = await printToPDF(html);
-      if (res && res.canceled === false)
-        message.success("PDF saved: " + res.path);
-      else if (res && res.canceled) message.info("PDF cancelled");
+      if (res && res.path) message.success("PDF saved at " + res.path);
+      else message.info("Print cancelled or failed");
     } catch (e) {
       message.error("Print failed: " + (e.message || ""));
     }
+  }
+
+  function loadRecipe(r) {
+    setRecipe(JSON.parse(JSON.stringify(r)));
+    message.info("Loaded recipe: " + r.name);
   }
 
   return (
@@ -541,7 +544,6 @@ export default function RecipePage() {
               </Checkbox>
             </Space>
 
-            {/* image preview */}
             {recipe.image ? (
               <div style={{ marginTop: 12 }}>
                 <Text strong>Image preview</Text>
@@ -633,6 +635,32 @@ export default function RecipePage() {
               />{" "}
               %
             </div>
+
+            <Card
+              title="Saved Recipes"
+              size="small"
+              style={{
+                marginTop: "50px",
+              }}
+              className="shadow"
+            >
+              <List
+                dataSource={[...recipes].reverse()}
+                renderItem={(item) => (
+                  <List.Item
+                    style={{
+                      cursor: "pointer",
+                      padding: "6px 8px",
+                    }}
+                    onClick={() => loadRecipe(item)}
+                  >
+                    <span>{item.name}</span>
+
+                    <Button>Load</Button>
+                  </List.Item>
+                )}
+              />
+            </Card>
           </Card>
         </Col>
       </Row>
