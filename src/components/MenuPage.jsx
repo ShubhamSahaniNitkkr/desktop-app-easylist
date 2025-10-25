@@ -1,11 +1,12 @@
 // src/components/MenuPage.jsx
 import React, { useEffect, useState } from "react";
-import { Button, message, Select, Modal, Input, List } from "antd";
+import { Button, message, Select, Modal, Input, List, InputNumber } from "antd";
 import { getAll, add, printToPDF } from "../utils/ipc";
 
 export default function MenuPage() {
   const [recipes, setRecipes] = useState([]);
   const [grid, setGrid] = useState({});
+  const [peopleGrid, setPeopleGrid] = useState({});
   const [menus, setMenus] = useState(["Menu 1", "Menu 2"]);
   const [savedMenus, setSavedMenus] = useState([]);
   const [activeMenu, setActiveMenu] = useState("Menu 1");
@@ -28,12 +29,14 @@ export default function MenuPage() {
     "Sunday",
   ];
   const meals = ["Breakfast", "Lunch", "Snack", "Dinner"];
+  const ageGroups = ["3–5 years", "6–10 years", "Adults"]; 
 
   useEffect(() => {
     (async () => {
       const all = await getAll();
       setRecipes(all.recipes || []);
       setSavedMenus(all.menus || []);
+      setPeopleGrid(all.peopleGrid || {});
     })();
   }, []);
 
@@ -66,6 +69,17 @@ export default function MenuPage() {
     message.success(`Added ${selectedRecipe}`);
   }
 
+  function updatePeople(day, meal, group, value) {
+    // ✅ added
+    setPeopleGrid((pg) => {
+      const cp = JSON.parse(JSON.stringify(pg));
+      const key = `${activeMenu}__W${weekOffset}__${day}__${meal}`;
+      cp[key] = cp[key] || {};
+      cp[key][group] = Number(value || 0);
+      return cp;
+    });
+  }
+
   function removeRecipe(day, meal, recipeName) {
     setGrid((g) => {
       const cp = { ...g };
@@ -86,6 +100,7 @@ export default function MenuPage() {
       weekOffset,
       menu: activeMenu,
       grid,
+      peopleGrid, // ✅ store people counts
     };
 
     await add("menus", obj);
@@ -102,6 +117,7 @@ export default function MenuPage() {
     setActiveMenu(menu.menu);
     setWeekOffset(menu.weekOffset);
     setGrid(menu.grid || {});
+    setPeopleGrid(menu.peopleGrid || {}); // ✅ restore
     message.info(`Loaded ${menu.name}`);
   }
 
@@ -121,21 +137,24 @@ export default function MenuPage() {
   }
 
   function generateShoppingList() {
-    const items = [];
-    Object.values(grid).forEach((arr) => {
-      (arr || []).forEach((r) => items.push(r));
+    // ✅ now includes age counts
+    let lines = [];
+    Object.keys(grid).forEach((key) => {
+      const items = grid[key] || [];
+      const people = peopleGrid[key] || {};
+      items.forEach((r) => {
+        lines.push(
+          `${r} — ${ageGroups
+            .map((g) => `${g}: ${people[g] || 0}`)
+            .join(" | ")}`
+        );
+      });
     });
 
-    if (items.length === 0) return message.info("Menu is empty.");
+    if (!lines.length) return message.info("Menu is empty.");
 
-    const txt = [...items]
-      .sort()
-      .map((i) => `• ${i}`)
-      .join("<br>");
-
-    const html = `<h1>Shopping List</h1><p>${txt}</p>`;
+    const html = `<h1>Shopping List</h1><p>${lines.join("<br>")}</p>`;
     printToPDF(html);
-
     message.success("Shopping list generated");
   }
 
@@ -171,7 +190,7 @@ export default function MenuPage() {
           <Select
             value={activeMenu}
             onChange={(v) => setActiveMenu(v)}
-            style={{ width: 130 }}
+            style={{ width: 160 }}
           >
             {menus.map((m) => (
               <Select.Option key={m} value={m}>
@@ -190,7 +209,7 @@ export default function MenuPage() {
 
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <Button onClick={() => setWeekOffset((w) => w - 1)}>◀</Button>
-          <div style={{ minWidth: 130, textAlign: "center" }}>
+          <div style={{ minWidth: 160, textAlign: "center" }}>
             {weekLabel()}
           </div>
           <Button onClick={() => setWeekOffset((w) => w + 1)}>▶</Button>
@@ -211,7 +230,7 @@ export default function MenuPage() {
               <div
                 key={d}
                 style={{
-                  minWidth: 130,
+                  minWidth: 160,
                   borderLeft: "1px solid #eee",
                   paddingLeft: 8,
                 }}
@@ -279,6 +298,19 @@ export default function MenuPage() {
                           </div>
                         ))}
                       </div>
+
+                      {ageGroups.map((g) => (
+                        <div key={g} style={{ marginTop: 4 }}>
+                          <small>{g}:</small>
+                          <InputNumber
+                            size="small"
+                            min={0}
+                            style={{ width: "100%" }}
+                            value={(peopleGrid[key] && peopleGrid[key][g]) || 0}
+                            onChange={(v) => updatePeople(d, m, g, v)}
+                          />
+                        </div>
+                      ))}
                     </div>
                   );
                 })}
@@ -291,7 +323,7 @@ export default function MenuPage() {
               Save Menu
             </Button>
             <Button onClick={generateShoppingList}>Shopping List</Button>{" "}
-            <Button onClick={printMenu}>Print</Button> {/* ✅ ADDED */}
+            <Button onClick={printMenu}>Print</Button>
           </div>
         </div>
 
