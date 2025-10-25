@@ -16,15 +16,11 @@ import { getAll, update, exportJSON, importJSON } from "../utils/ipc";
 export default function OptionsPage({ refreshOptions }) {
   const [options, setOptions] = useState(null);
 
-  // quick add fields
   const [newCat, setNewCat] = useState("");
   const [newSup, setNewSup] = useState("");
   const [newAllergen, setNewAllergen] = useState("");
-  const [ageLabel, setAgeLabel] = useState("");
-  const [ageCategory, setAgeCategory] = useState("");
-  const [agePortion, setAgePortion] = useState("");
 
-  // profiles
+  const [newAgeGroup, setNewAgeGroup] = useState("");
   const [profiles, setProfiles] = useState([]);
   const [activeProfile, setActiveProfile] = useState("");
   const [newProfileName, setNewProfileName] = useState("");
@@ -40,10 +36,14 @@ export default function OptionsPage({ refreshOptions }) {
       opts.categories = opts.categories || [];
       opts.suppliers = opts.suppliers || [];
       opts.allergens = opts.allergens || [];
-      opts.standardPortions = opts.standardPortions || [];
+
+      // ✅ New structure:
+      opts.ageGroups = opts.ageGroups || ["3–5 years", "6–10 years", "Adults"];
+      opts.portions = opts.portions || {};
+
       opts.profiles = opts.profiles || [];
       setOptions(opts);
-      setProfiles(opts.profiles || []);
+      setProfiles(opts.profiles);
       setActiveProfile(
         (opts.profiles && opts.profiles[0] && opts.profiles[0].name) || ""
       );
@@ -104,32 +104,46 @@ export default function OptionsPage({ refreshOptions }) {
     }));
   }
 
-  function addStandardPortion() {
-    if (!ageLabel || !ageCategory || !agePortion)
-      return message.error("Please fill all fields");
-    const id = Date.now().toString();
-    const newRow = {
-      id,
-      label: ageLabel,
-      category: ageCategory,
-      grams: Number(agePortion),
-    };
+  // ✅ Age Groups
+  function addAgeGroup() {
+    if (!newAgeGroup.trim()) return;
+    const label = newAgeGroup.trim();
+    if ((options.ageGroups || []).includes(label)) {
+      message.warning("Age group exists");
+      setNewAgeGroup("");
+      return;
+    }
     setOptions((o) => ({
       ...o,
-      standardPortions: [...(o.standardPortions || []), newRow],
+      ageGroups: [...(o.ageGroups || []), label],
+      portions: { ...o.portions, [label]: {} },
     }));
-    setAgeLabel("");
-    setAgeCategory("");
-    setAgePortion("");
+    setNewAgeGroup("");
   }
-  function removeStandardPortion(id) {
+  function removeAgeGroup(label) {
+    const { [label]: _, ...rest } = options.portions;
     setOptions((o) => ({
       ...o,
-      standardPortions: (o.standardPortions || []).filter((p) => p.id !== id),
+      ageGroups: (o.ageGroups || []).filter((x) => x !== label),
+      portions: rest,
     }));
   }
 
-  // profiles
+  // ✅ Update portion gram value
+  function updatePortion(label, category, grams) {
+    setOptions((o) => ({
+      ...o,
+      portions: {
+        ...o.portions,
+        [label]: {
+          ...(o.portions[label] || {}),
+          [category]: Number(grams || 0),
+        },
+      },
+    }));
+  }
+
+  // Profiles remain same
   function makeEmptyTable(labels) {
     const table = {};
     days.forEach((d) => {
@@ -154,7 +168,7 @@ export default function OptionsPage({ refreshOptions }) {
     const name = newProfileName.trim();
     if ((profiles || []).some((p) => p.name === name))
       return message.warning("Profile exists");
-    const labels = (options.standardPortions || []).map((s) => s.label);
+    const labels = options.ageGroups || [];
     const profile = { name, table: makeEmptyTable(labels) };
     const next = [...profiles, profile];
     setProfiles(next);
@@ -175,8 +189,6 @@ export default function OptionsPage({ refreshOptions }) {
     const next = profiles.map((p) => {
       if (p.name !== profileName) return p;
       const cp = JSON.parse(JSON.stringify(p));
-      cp.table[day] = cp.table[day] || {};
-      cp.table[day][meal] = cp.table[day][meal] || {};
       cp.table[day][meal][label] = Number(val || 0);
       return cp;
     });
@@ -184,7 +196,6 @@ export default function OptionsPage({ refreshOptions }) {
     setOptions((o) => ({ ...o, profiles: next }));
   }
 
-  // SQL (placeholder)
   function setSQLQuery(value) {
     setOptions((o) => ({ ...o, sqlQuery: value }));
   }
@@ -205,10 +216,6 @@ export default function OptionsPage({ refreshOptions }) {
   async function save() {
     try {
       await update("options", null, options);
-      if (options) {
-        options.profiles = profiles;
-        await update("options", null, options);
-      }
       message.success("Options saved");
       if (refreshOptions) refreshOptions(options);
     } catch (e) {
@@ -223,70 +230,28 @@ export default function OptionsPage({ refreshOptions }) {
       <h2>Options</h2>
       <div style={{ display: "flex", gap: 12 }}>
         <div style={{ flex: 1 }} className="list">
-          {/* Language & Currency */}
-          <div style={{ marginBottom: 12 }}>
-            <label style={{ display: "block", fontWeight: 700 }}>
-              Default Language
-            </label>
-            <Select
-              value={options.defaultLang || "fr"}
-              onChange={(v) => setOptions((o) => ({ ...o, defaultLang: v }))}
-              style={{ width: 160 }}
-            >
-              <Select.Option value="fr">Français</Select.Option>
-              <Select.Option value="en">English</Select.Option>
-            </Select>
-          </div>
-
-          <div style={{ marginTop: 12 }}>
-            <label style={{ display: "block", fontWeight: 700 }}>
-              Currency symbol
-            </label>
-            <Input
-              value={options.currency || "₹"}
-              onChange={(e) =>
-                setOptions((o) => ({ ...o, currency: e.target.value }))
-              }
-              style={{ width: 160 }}
-            />
-          </div>
-
           {/* Categories */}
           <div style={{ marginTop: 12 }}>
             <h4>Categories</h4>
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "column",
-                gap: 6,
-              }}
-            >
-              {(options.categories || []).map((c, i) => (
-                <div
-                  key={i}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 8,
-                    justifyContent: "flex-start",
-                  }}
+            {(options.categories || []).map((c, i) => (
+              <div
+                key={i}
+                style={{ display: "flex", gap: 8, alignItems: "center" }}
+              >
+                <div>{c}</div>
+                <Popconfirm
+                  title={`Remove category "${c}"?`}
+                  onConfirm={() => removeCategory(c)}
                 >
-                  <div>{c}</div>
-                  <Popconfirm
-                    title={`Remove category "${c}"?`}
-                    onConfirm={() => removeCategory(c)}
-                  >
-                    <a style={{ color: "red" }}>Remove</a>
-                  </Popconfirm>
-                </div>
-              ))}
-            </div>
+                  <a style={{ color: "red" }}>Remove</a>
+                </Popconfirm>
+              </div>
+            ))}
             <Row gutter={8} style={{ marginTop: 8 }}>
               <Col>
                 <Input
                   value={newCat}
                   onChange={(e) => setNewCat(e.target.value)}
-                  placeholder="New category"
                 />
               </Col>
               <Col>
@@ -298,28 +263,22 @@ export default function OptionsPage({ refreshOptions }) {
           {/* Suppliers */}
           <div style={{ marginTop: 12 }}>
             <h4>Suppliers</h4>
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              {(options.suppliers || []).map((s, i) => (
-                <div
-                  key={i}
-                  style={{ display: "flex", alignItems: "center", gap: 8 }}
+            {(options.suppliers || []).map((s, i) => (
+              <div key={i} style={{ display: "flex", gap: 8 }}>
+                <div style={{ flex: 1 }}>{s}</div>
+                <Popconfirm
+                  title={`Remove supplier "${s}"?`}
+                  onConfirm={() => removeSupplier(s)}
                 >
-                  <div style={{ flex: 1 }}>{s}</div>
-                  <Popconfirm
-                    title={`Remove supplier "${s}"?`}
-                    onConfirm={() => removeSupplier(s)}
-                  >
-                    <a style={{ color: "red" }}>Remove</a>
-                  </Popconfirm>
-                </div>
-              ))}
-            </div>
+                  <a style={{ color: "red" }}>Remove</a>
+                </Popconfirm>
+              </div>
+            ))}
             <Row gutter={8} style={{ marginTop: 8 }}>
               <Col>
                 <Input
                   value={newSup}
                   onChange={(e) => setNewSup(e.target.value)}
-                  placeholder="New supplier"
                 />
               </Col>
               <Col>
@@ -331,28 +290,22 @@ export default function OptionsPage({ refreshOptions }) {
           {/* Allergens */}
           <div style={{ marginTop: 12 }}>
             <h4>Allergens</h4>
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              {(options.allergens || []).map((a, i) => (
-                <div
-                  key={i}
-                  style={{ display: "flex", alignItems: "center", gap: 8 }}
+            {(options.allergens || []).map((a, i) => (
+              <div key={i} style={{ display: "flex", gap: 8 }}>
+                <div>{a}</div>
+                <Popconfirm
+                  title="Remove allergen?"
+                  onConfirm={() => removeAllergen(a)}
                 >
-                  <div>{a}</div>
-                  <Popconfirm
-                    title={`Remove allergen "${a}"?`}
-                    onConfirm={() => removeAllergen(a)}
-                  >
-                    <a style={{ color: "red" }}>Remove</a>
-                  </Popconfirm>
-                </div>
-              ))}
-            </div>
+                  <a style={{ color: "red" }}>Remove</a>
+                </Popconfirm>
+              </div>
+            ))}
             <Row gutter={8} style={{ marginTop: 8 }}>
               <Col>
                 <Input
                   value={newAllergen}
                   onChange={(e) => setNewAllergen(e.target.value)}
-                  placeholder="New allergen"
                 />
               </Col>
               <Col>
@@ -361,95 +314,99 @@ export default function OptionsPage({ refreshOptions }) {
             </Row>
           </div>
 
-          {/* Standard Portions */}
+          {/* ✅ Age Groups + Portions */}
           <div style={{ marginTop: 12 }}>
-            <h4>Standard portions (label → category → grams)</h4>
-            <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-              <Input
-                placeholder="Label (e.g. 3–5 years)"
-                value={ageLabel}
-                onChange={(e) => setAgeLabel(e.target.value)}
-              />
-              <Select
-                placeholder="Category"
-                value={ageCategory}
-                onChange={(v) => setAgeCategory(v)}
-                style={{ width: 180 }}
-              >
-                {(options.categories || []).map((c) => (
-                  <Select.Option key={c} value={c}>
-                    {c}
-                  </Select.Option>
-                ))}
-              </Select>
-              <Input
-                placeholder="grams"
-                value={agePortion}
-                onChange={(e) => setAgePortion(e.target.value)}
-                style={{ width: 120 }}
-              />
-              <Button onClick={addStandardPortion}>Add</Button>
-            </div>
+            <h4>Age Groups & Portions</h4>
 
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {(options.standardPortions || []).map((p) => (
+            <Row gutter={8}>
+              <Col>
+                <Input
+                  placeholder="Age group label"
+                  value={newAgeGroup}
+                  onChange={(e) => setNewAgeGroup(e.target.value)}
+                />
+              </Col>
+              <Col>
+                <Button onClick={addAgeGroup}>Add</Button>
+              </Col>
+            </Row>
+
+            {(options.ageGroups || []).map((ag) => (
+              <div
+                key={ag}
+                style={{
+                  marginTop: 12,
+                  padding: 8,
+                  border: "1px solid #eee",
+                  borderRadius: 6,
+                }}
+              >
                 <div
-                  key={p.id}
                   style={{
-                    display: "grid",
-                    gridTemplateColumns: "1fr 1fr 100px 60px",
-                    gap: 8,
-                    alignItems: "center",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    marginBottom: 6,
                   }}
                 >
-                  <div>{p.label}</div>
-                  <div>{p.category}</div>
-                  <div>{p.grams} g</div>
+                  <b>{ag}</b>
                   <Popconfirm
-                    title="Delete?"
-                    onConfirm={() => removeStandardPortion(p.id)}
+                    title="Delete age group?"
+                    onConfirm={() => removeAgeGroup(ag)}
                   >
-                    <a style={{ color: "red" }}>Delete</a>
+                    <a style={{ color: "red" }}>Remove</a>
                   </Popconfirm>
                 </div>
-              ))}
-            </div>
+
+                {(options.categories || []).map((cat) => (
+                  <div
+                    key={cat}
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      marginBottom: 6,
+                      gap: 8,
+                    }}
+                  >
+                    <div style={{ width: 140 }}>{cat}</div>
+                    <InputNumber
+                      min={0}
+                      value={options.portions?.[ag]?.[cat] || 0}
+                      onChange={(v) => updatePortion(ag, cat, v)}
+                      style={{ width: 100 }}
+                    />
+                    g
+                  </div>
+                ))}
+              </div>
+            ))}
           </div>
 
           {/* Profiles */}
           <div style={{ marginTop: 18 }}>
             <h4>Profiles (people per meal / age group)</h4>
-            <div
-              style={{
-                display: "flex",
-                gap: 8,
-                alignItems: "center",
-                marginBottom: 8,
-              }}
-            >
-              <Select
-                value={activeProfile}
-                onChange={(v) => setActiveProfile(v)}
-                style={{ width: 200 }}
-              >
-                {(profiles || []).map((p) => (
-                  <Select.Option key={p.name} value={p.name}>
-                    {p.name}
-                  </Select.Option>
-                ))}
-              </Select>
-              <Button onClick={openAddProfile}>+ Add profile</Button>
-              <Popconfirm
-                title="Delete profile?"
-                onConfirm={() => deleteProfile(activeProfile)}
-              >
-                <Button danger disabled={!activeProfile}>
-                  Delete
-                </Button>
-              </Popconfirm>
-            </div>
 
-            {activeProfile ? (
+            <Select
+              value={activeProfile}
+              onChange={(v) => setActiveProfile(v)}
+              style={{ width: 200 }}
+            >
+              {(profiles || []).map((p) => (
+                <Select.Option key={p.name} value={p.name}>
+                  {p.name}
+                </Select.Option>
+              ))}
+            </Select>
+            <Button onClick={openAddProfile}>+ Add profile</Button>
+            <Popconfirm
+              title="Delete profile?"
+              onConfirm={() => deleteProfile(activeProfile)}
+            >
+              <Button danger disabled={!activeProfile}>
+                Delete
+              </Button>
+            </Popconfirm>
+
+            {activeProfile && (
               <div
                 style={{
                   maxHeight: 360,
@@ -457,17 +414,15 @@ export default function OptionsPage({ refreshOptions }) {
                   border: "1px solid #f0f0f0",
                   padding: 8,
                   borderRadius: 6,
+                  marginTop: 8,
                 }}
               >
-                <div style={{ fontWeight: 700, marginBottom: 8 }}>
-                  Enter number of people per day/meal/age-group
-                </div>
-
+                {/* ✅ HEADER ROW (Fixed) */}
                 <div
                   style={{
                     display: "grid",
                     gridTemplateColumns: `160px repeat(${
-                      (options.standardPortions || []).length
+                      (options.ageGroups || []).length
                     }, 1fr)`,
                     gap: 8,
                     alignItems: "center",
@@ -475,9 +430,9 @@ export default function OptionsPage({ refreshOptions }) {
                   }}
                 >
                   <div />
-                  {(options.standardPortions || []).map((sp) => (
-                    <div key={sp.id} style={{ fontWeight: 600 }}>
-                      {sp.label}
+                  {(options.ageGroups || []).map((lbl) => (
+                    <div key={lbl} style={{ fontWeight: 600 }}>
+                      {lbl}
                     </div>
                   ))}
                 </div>
@@ -496,30 +451,18 @@ export default function OptionsPage({ refreshOptions }) {
                         }}
                       >
                         <div style={{ width: 160 }}>{m}</div>
-                        {(options.standardPortions || []).map((sp) => {
+                        {(options.ageGroups || []).map((lbl) => {
                           const profile = profiles.find(
                             (p) => p.name === activeProfile
                           );
-                          const value =
-                            (profile &&
-                              profile.table &&
-                              profile.table[d] &&
-                              profile.table[d][m] &&
-                              profile.table[d][m][sp.label]) ||
-                            0;
+                          const value = profile?.table?.[d]?.[m]?.[lbl] || 0;
                           return (
                             <InputNumber
-                              key={sp.id}
+                              key={lbl}
                               min={0}
                               value={value}
                               onChange={(v) =>
-                                updateProfileCell(
-                                  activeProfile,
-                                  d,
-                                  m,
-                                  sp.label,
-                                  v
-                                )
+                                updateProfileCell(activeProfile, d, m, lbl, v)
                               }
                               style={{ width: 80 }}
                             />
@@ -530,28 +473,10 @@ export default function OptionsPage({ refreshOptions }) {
                   </div>
                 ))}
               </div>
-            ) : (
-              <div style={{ color: "#666" }}>
-                Create or select a profile to edit people counts.
-              </div>
             )}
           </div>
-          <div style={{ marginTop: 18 }}>
-            <h4>SQL Query</h4>
-            <small style={{ color: "#666" }}>
-              Paste or edit the SQL query used by import/export/advanced
-              processing (you mentioned this in the image).
-            </small>
-            <Input.TextArea
-              rows={4}
-              value={options.sqlQuery || ""}
-              onChange={(e) => setSQLQuery(e.target.value)}
-              style={{ marginTop: 8 }}
-            />
-          </div>
 
-          {/* Actions */}
-          <div style={{ marginTop: 12, display: "flex", gap: 8 }}>
+          <div style={{ marginTop: 12 }}>
             <Button type="primary" onClick={save}>
               Apply
             </Button>
@@ -563,8 +488,7 @@ export default function OptionsPage({ refreshOptions }) {
         <div style={{ width: 360 }} className="list">
           <h4>Advanced / Notes</h4>
           <p>
-            Allergens and categories can be extended here. Standard portions are
-            used by recipe scaling.
+            Allergens, age groups, and scaling logic now work together smoothly.
           </p>
         </div>
       </div>
@@ -576,14 +500,10 @@ export default function OptionsPage({ refreshOptions }) {
         onOk={confirmAddProfile}
       >
         <Input
-          placeholder="Profile name (e.g., 'Normal week')"
+          placeholder="Profile name"
           value={newProfileName}
           onChange={(e) => setNewProfileName(e.target.value)}
         />
-        <div style={{ marginTop: 8, color: "#666" }}>
-          New profile will have columns for your defined standard portions (age
-          labels).
-        </div>
       </Modal>
     </div>
   );

@@ -1,5 +1,5 @@
 // electron/main.js
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Menu } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid'); // ✅ Works with uuid@8 (CommonJS)
@@ -74,7 +74,49 @@ async function createWindow() {
 app.whenReady().then(async () => {
     try {
         await init();
-        await createWindow();
+        const win = await createWindow();
+
+        // ✅ Keep File, Edit, View (zoom), Help (empty)
+        const { Menu } = require("electron");
+        const template = [
+            {
+                label: "File",
+                submenu: [
+                    { role: "quit" }
+                ]
+            },
+            {
+                label: "Edit",
+                submenu: [
+                    { role: "undo" },
+                    { role: "redo" },
+                    { type: "separator" },
+                    { role: "cut" },
+                    { role: "copy" },
+                    { role: "paste" }
+                ]
+            },
+            {
+                label: "View", // ✅ Keep zoom features
+                submenu: [
+                    { role: "reload" },
+                    { role: "forceReload" },
+                    { role: "toggleDevTools" },
+                    { type: "separator" },
+                    { role: "resetZoom" },
+                    { role: "zoomIn" },
+                    { role: "zoomOut" },
+                    { type: "separator" },
+                    { role: "togglefullscreen" }
+                ]
+            },
+            {
+                label: "Help", // ✅ Show but empty
+                submenu: []
+            }
+        ];
+
+        Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 
         app.on('activate', () => {
             if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -84,6 +126,7 @@ app.whenReady().then(async () => {
         dialog.showErrorBox('Startup Error', err.message);
     }
 });
+
 
 app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') app.quit();
