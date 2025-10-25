@@ -1,7 +1,7 @@
 // src/components/MenuPage.jsx
 import React, { useEffect, useState } from "react";
 import { Button, message, Select, Modal, Input, List } from "antd";
-import { getAll, add } from "../utils/ipc";
+import { getAll, add, printToPDF } from "../utils/ipc";
 
 export default function MenuPage() {
   const [recipes, setRecipes] = useState([]);
@@ -13,7 +13,6 @@ export default function MenuPage() {
   const [isAddingMenu, setIsAddingMenu] = useState(false);
   const [newMenuName, setNewMenuName] = useState("");
 
-  // 🆕 For recipe selection modal
   const [isAddRecipeModalOpen, setIsAddRecipeModalOpen] = useState(false);
   const [selectedDay, setSelectedDay] = useState("");
   const [selectedMeal, setSelectedMeal] = useState("");
@@ -30,7 +29,6 @@ export default function MenuPage() {
   ];
   const meals = ["Breakfast", "Lunch", "Snack", "Dinner"];
 
-  // ✅ Load recipes & saved menus from DB
   useEffect(() => {
     (async () => {
       const all = await getAll();
@@ -49,7 +47,6 @@ export default function MenuPage() {
     return `Week of ${start.toLocaleDateString()}`;
   }
 
-  // 🆕 Add recipe (controlled modal)
   function addRecipe(day, meal) {
     setSelectedDay(day);
     setSelectedMeal(meal);
@@ -58,10 +55,7 @@ export default function MenuPage() {
   }
 
   function confirmAddRecipe() {
-    if (!selectedRecipe) {
-      message.error("Please select a recipe");
-      return;
-    }
+    if (!selectedRecipe) return message.error("Please select a recipe");
     setGrid((g) => {
       const cp = { ...g };
       const key = `${activeMenu}__W${weekOffset}__${selectedDay}__${selectedMeal}`;
@@ -69,9 +63,7 @@ export default function MenuPage() {
       return cp;
     });
     setIsAddRecipeModalOpen(false);
-    message.success(
-      `Added ${selectedRecipe} to ${selectedMeal} (${selectedDay})`
-    );
+    message.success(`Added ${selectedRecipe}`);
   }
 
   function removeRecipe(day, meal, recipeName) {
@@ -98,7 +90,6 @@ export default function MenuPage() {
 
     await add("menus", obj);
 
-    // Update local list (replace if exists)
     setSavedMenus((prev) => {
       const filtered = prev.filter((m) => m.id !== obj.id);
       return [...filtered, obj];
@@ -107,12 +98,11 @@ export default function MenuPage() {
     message.success(`Menu saved: ${obj.name}`);
   }
 
-  // ✅ Load saved menu for editing
   function loadMenu(menu) {
     setActiveMenu(menu.menu);
     setWeekOffset(menu.weekOffset);
     setGrid(menu.grid || {});
-    message.info(`Loaded ${menu.name} for editing`);
+    message.info(`Loaded ${menu.name}`);
   }
 
   function openAddMenuModal() {
@@ -121,25 +111,53 @@ export default function MenuPage() {
   }
 
   function confirmAddMenu() {
-    if (!newMenuName.trim()) {
-      message.error("Please enter a menu name");
-      return;
-    }
-    if (menus.includes(newMenuName.trim())) {
-      message.warning("Menu already exists");
-      return;
-    }
+    if (!newMenuName.trim()) return message.error("Enter a menu name");
+    if (menus.includes(newMenuName.trim()))
+      return message.warning("Menu already exists");
     setMenus((prev) => [...prev, newMenuName.trim()]);
     setActiveMenu(newMenuName.trim());
     setIsAddingMenu(false);
-    message.success("Menu added: " + newMenuName);
+    message.success("Added menu: " + newMenuName);
+  }
+
+  function generateShoppingList() {
+    const items = [];
+    Object.values(grid).forEach((arr) => {
+      (arr || []).forEach((r) => items.push(r));
+    });
+
+    if (items.length === 0) return message.info("Menu is empty.");
+
+    const txt = [...items]
+      .sort()
+      .map((i) => `• ${i}`)
+      .join("<br>");
+
+    const html = `<h1>Shopping List</h1><p>${txt}</p>`;
+    printToPDF(html);
+
+    message.success("Shopping list generated");
+  }
+
+  function printMenu() {
+    let html = `<h1>${activeMenu} - ${weekLabel()}</h1>`;
+    days.forEach((d) => {
+      html += `<h3>${d}</h3><ul>`;
+      meals.forEach((m) => {
+        const key = `${activeMenu}__W${weekOffset}__${d}__${m}`;
+        const items = grid[key] || [];
+        html += `<li><b>${m}:</b> ${items.join(", ") || "-"}</li>`;
+      });
+      html += `</ul>`;
+    });
+    printToPDF(html);
+    message.success("Menu PDF generated");
   }
 
   return (
     <div className="page">
       <h2>Weekly Menus</h2>
 
-      {/* Menu + Week selector */}
       <div
         style={{
           display: "flex",
@@ -180,7 +198,6 @@ export default function MenuPage() {
       </div>
 
       <div style={{ display: "flex", gap: 12 }}>
-        {/* LEFT: Week Grid */}
         <div
           style={{
             flex: 1,
@@ -269,14 +286,15 @@ export default function MenuPage() {
             ))}
           </div>
 
-          <div style={{ marginTop: 16 }}>
+          <div style={{ marginTop: 16, display: "flex", gap: 8 }}>
             <Button type="primary" onClick={save}>
               Save Menu
             </Button>
+            <Button onClick={generateShoppingList}>Shopping List</Button>{" "}
+            <Button onClick={printMenu}>Print</Button> {/* ✅ ADDED */}
           </div>
         </div>
 
-        {/* RIGHT: Saved Menus List */}
         <div
           style={{
             width: 700,
@@ -310,7 +328,6 @@ export default function MenuPage() {
         </div>
       </div>
 
-      {/* Add Recipe Modal */}
       <Modal
         title={`Add Recipe for ${selectedMeal} (${selectedDay})`}
         open={isAddRecipeModalOpen}

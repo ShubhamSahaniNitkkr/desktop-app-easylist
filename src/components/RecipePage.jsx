@@ -45,6 +45,18 @@ export default function RecipePage() {
     })();
   }, []);
 
+  function newRecipe() {
+    setRecipe({
+      name: "",
+      ingredients: [],
+      steps: [],
+      image: "",
+      rating: 100,
+      asIngredient: false,
+      youtube: "",
+    });
+  }
+
   function addIngredientRow() {
     setRecipe((r) => ({
       ...r,
@@ -88,7 +100,7 @@ export default function RecipePage() {
       ...r,
       steps: [
         ...(r.steps || []),
-        { text: "", time: 0, temperature: "", method: "" },
+        { text: "", time: 0, temperature: "" /*, method: ""*/ },
       ],
     }));
   }
@@ -272,6 +284,12 @@ export default function RecipePage() {
               borderRadius: 12,
             }}
           >
+            <Space style={{ marginBottom: 12 }}>
+              <Button type="default" onClick={newRecipe}>
+                New Recipe
+              </Button>
+            </Space>
+
             <Row gutter={12} align="middle">
               <Col span={10}>
                 <Text strong>Recipe Name</Text>
@@ -363,13 +381,11 @@ export default function RecipePage() {
                 align="middle"
               >
                 <Col span={7}>
-                  {/* Autocomplete: choose existing ingredient to auto-fill unit */}
                   <Select
                     showSearch
                     allowClear
                     placeholder="Ingredient (type to search)"
                     value={ing.name || undefined}
-                    onSearch={() => {}}
                     onChange={(value) => selectIngredient(idx, value)}
                     style={{ width: "100%" }}
                     filterOption={(input, option) =>
@@ -446,18 +462,16 @@ export default function RecipePage() {
             <Title level={5}>Preparation Steps</Title>
             {recipe.steps.length !== 0 && (
               <Row gutter={8} style={{ marginBottom: 6 }}>
-                <Col span={10}>
+                <Col span={14}>
                   <Text type="secondary">Step Description</Text>
                 </Col>
-                <Col span={3}>
+                <Col span={4}>
                   <Text type="secondary">Time (min)</Text>
                 </Col>
-                <Col span={3}>
+                <Col span={4}>
                   <Text type="secondary">Temp (°C)</Text>
                 </Col>
-                <Col span={6}>
-                  <Text type="secondary">Method</Text>
-                </Col>
+                {/* <Col span={6}><Text type="secondary">Method</Text></Col> */}
                 <Col span={2}>
                   <Text type="secondary">Action</Text>
                 </Col>
@@ -469,16 +483,17 @@ export default function RecipePage() {
                 key={i}
                 gutter={8}
                 style={{ marginBottom: 8 }}
-                align="middle"
+                align="start"
               >
-                <Col span={10}>
-                  <Input
+                <Col span={18}>
+                  <Input.TextArea
+                    rows={4}
                     value={s.text}
                     onChange={(e) => updateStep(i, "text", e.target.value)}
                     placeholder="Describe step"
                   />
                 </Col>
-                <Col span={3}>
+                <Col span={2}>
                   <InputNumber
                     style={{ width: "100%" }}
                     value={s.time}
@@ -486,7 +501,7 @@ export default function RecipePage() {
                     min={0}
                   />
                 </Col>
-                <Col span={3}>
+                <Col span={2}>
                   <InputNumber
                     style={{ width: "100%" }}
                     value={s.temperature}
@@ -495,7 +510,7 @@ export default function RecipePage() {
                     min={0}
                   />
                 </Col>
-                <Col span={6}>
+                {/* <Col span={6}>
                   <Select
                     style={{ width: "100%" }}
                     value={s.method || ""}
@@ -507,7 +522,7 @@ export default function RecipePage() {
                       </Select.Option>
                     ))}
                   </Select>
-                </Col>
+                </Col> */}
                 <Col span={2}>
                   <Button
                     danger
