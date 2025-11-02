@@ -1,12 +1,10 @@
-// src/components/MenuPage.jsx
 import React, { useEffect, useState } from "react";
-import { Button, message, Select, Modal, Input, List, InputNumber } from "antd";
+import { Button, message, Select, Modal, Input, List, Radio } from "antd";
 import { getAll, add, printToPDF } from "../utils/ipc";
 
 export default function MenuPage() {
   const [recipes, setRecipes] = useState([]);
   const [grid, setGrid] = useState({});
-  const [peopleGrid, setPeopleGrid] = useState({});
   const [menus, setMenus] = useState(["Menu 1", "Menu 2"]);
   const [savedMenus, setSavedMenus] = useState([]);
   const [activeMenu, setActiveMenu] = useState("Menu 1");
@@ -18,6 +16,11 @@ export default function MenuPage() {
   const [selectedDay, setSelectedDay] = useState("");
   const [selectedMeal, setSelectedMeal] = useState("");
   const [selectedRecipe, setSelectedRecipe] = useState("");
+  const [profiles, setProfiles] = useState([]);
+  const [selectedProfile, setSelectedProfile] = useState("");
+
+  // shopping list scope
+  const [shoppingScope, setShoppingScope] = useState("week"); // 'week' | 'day' | 'meal'
 
   const days = [
     "Monday",
@@ -29,14 +32,13 @@ export default function MenuPage() {
     "Sunday",
   ];
   const meals = ["Breakfast", "Lunch", "Snack", "Dinner"];
-  const ageGroups = ["3–5 years", "6–10 years", "Adults"]; 
 
   useEffect(() => {
     (async () => {
       const all = await getAll();
       setRecipes(all.recipes || []);
       setSavedMenus(all.menus || []);
-      setPeopleGrid(all.peopleGrid || {});
+      setProfiles(all.options?.profiles || []);
     })();
   }, []);
 
@@ -69,17 +71,6 @@ export default function MenuPage() {
     message.success(`Added ${selectedRecipe}`);
   }
 
-  function updatePeople(day, meal, group, value) {
-    // ✅ added
-    setPeopleGrid((pg) => {
-      const cp = JSON.parse(JSON.stringify(pg));
-      const key = `${activeMenu}__W${weekOffset}__${day}__${meal}`;
-      cp[key] = cp[key] || {};
-      cp[key][group] = Number(value || 0);
-      return cp;
-    });
-  }
-
   function removeRecipe(day, meal, recipeName) {
     setGrid((g) => {
       const cp = { ...g };
@@ -93,23 +84,18 @@ export default function MenuPage() {
     const existing = savedMenus.find(
       (m) => m.menu === activeMenu && m.weekOffset === weekOffset
     );
-
     const obj = {
       id: existing?.id || Date.now().toString(),
       name: `${activeMenu}_W${weekOffset}`,
       weekOffset,
       menu: activeMenu,
       grid,
-      peopleGrid, // ✅ store people counts
     };
-
     await add("menus", obj);
-
     setSavedMenus((prev) => {
       const filtered = prev.filter((m) => m.id !== obj.id);
       return [...filtered, obj];
     });
-
     message.success(`Menu saved: ${obj.name}`);
   }
 
@@ -117,7 +103,6 @@ export default function MenuPage() {
     setActiveMenu(menu.menu);
     setWeekOffset(menu.weekOffset);
     setGrid(menu.grid || {});
-    setPeopleGrid(menu.peopleGrid || {}); // ✅ restore
     message.info(`Loaded ${menu.name}`);
   }
 
@@ -136,28 +121,44 @@ export default function MenuPage() {
     message.success("Added menu: " + newMenuName);
   }
 
+  // 🔹 Auto-load counts by selected profile (once connected to OptionsPage)
+  function loadProfileCounts() {
+    if (!selectedProfile) return;
+    const prof = profiles.find((p) => p.name === selectedProfile);
+    if (!prof) return message.warning("Profile not found");
+    message.success(`Profile "${selectedProfile}" loaded`);
+  }
+
+  // 🔹 Generate shopping list (scope-based)
   function generateShoppingList() {
-    // ✅ now includes age counts
-    let lines = [];
-    Object.keys(grid).forEach((key) => {
-      const items = grid[key] || [];
-      const people = peopleGrid[key] || {};
-      items.forEach((r) => {
-        lines.push(
-          `${r} — ${ageGroups
-            .map((g) => `${g}: ${people[g] || 0}`)
-            .join(" | ")}`
-        );
-      });
-    });
+    let keys = [];
+    if (shoppingScope === "week") {
+      keys = Object.keys(grid).filter((k) =>
+        k.startsWith(`${activeMenu}__W${weekOffset}`)
+      );
+    } else if (shoppingScope === "day") {
+      const day = prompt("Enter day name (e.g. Monday):");
+      keys = Object.keys(grid).filter((k) =>
+        k.startsWith(`${activeMenu}__W${weekOffset}__${day}`)
+      );
+    } else if (shoppingScope === "meal") {
+      const day = prompt("Enter day name (e.g. Monday):");
+      const meal = prompt("Enter meal (Breakfast/Lunch/Snack/Dinner):");
+      keys = [
+        `${activeMenu}__W${weekOffset}__${day}__${meal}`,
+      ].filter((k) => grid[k]);
+    }
 
-    if (!lines.length) return message.info("Menu is empty.");
+    const items = keys.flatMap((k) => grid[k] || []);
+    if (items.length === 0) return message.info("Menu is empty for selection");
 
-    const html = `<h1>Shopping List</h1><p>${lines.join("<br>")}</p>`;
+    const txt = items.map((i) => `• ${i}`).join("<br>");
+    const html = `<h1>Shopping List (${shoppingScope})</h1><p>${txt}</p>`;
     printToPDF(html);
     message.success("Shopping list generated");
   }
 
+  // 🔹 Print current menu
   function printMenu() {
     let html = `<h1>${activeMenu} - ${weekLabel()}</h1>`;
     days.forEach((d) => {
@@ -177,20 +178,13 @@ export default function MenuPage() {
     <div className="page">
       <h2>Weekly Menus</h2>
 
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 12,
-          marginBottom: 16,
-        }}
-      >
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 16 }}>
         <div>
           <span style={{ marginRight: 6 }}>Menu:</span>
           <Select
             value={activeMenu}
             onChange={(v) => setActiveMenu(v)}
-            style={{ width: 160 }}
+            style={{ width: 130 }}
           >
             {menus.map((m) => (
               <Select.Option key={m} value={m}>
@@ -198,21 +192,32 @@ export default function MenuPage() {
               </Select.Option>
             ))}
           </Select>
-          <Button
-            size="small"
-            onClick={openAddMenuModal}
-            style={{ marginLeft: 8 }}
-          >
+          <Button size="small" onClick={openAddMenuModal} style={{ marginLeft: 8 }}>
             + Add Menu
           </Button>
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <Button onClick={() => setWeekOffset((w) => w - 1)}>◀</Button>
-          <div style={{ minWidth: 160, textAlign: "center" }}>
-            {weekLabel()}
-          </div>
+          <div style={{ minWidth: 130, textAlign: "center" }}>{weekLabel()}</div>
           <Button onClick={() => setWeekOffset((w) => w + 1)}>▶</Button>
+        </div>
+
+        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 8 }}>
+          <span>Profile:</span>
+          <Select
+            value={selectedProfile}
+            onChange={(v) => setSelectedProfile(v)}
+            placeholder="Select Profile"
+            style={{ width: 160 }}
+          >
+            {(profiles || []).map((p) => (
+              <Select.Option key={p.name} value={p.name}>
+                {p.name}
+              </Select.Option>
+            ))}
+          </Select>
+          <Button onClick={loadProfileCounts}>Load</Button>
         </div>
       </div>
 
@@ -222,15 +227,15 @@ export default function MenuPage() {
             flex: 1,
             boxShadow: "0 2px 12px rgba(0,0,0,0.08)",
             borderRadius: 12,
+            padding: 8,
           }}
-          className="list"
         >
           <div style={{ display: "flex", gap: 12, overflowX: "auto" }}>
             {days.map((d) => (
               <div
                 key={d}
                 style={{
-                  minWidth: 160,
+                  minWidth: 130,
                   borderLeft: "1px solid #eee",
                   paddingLeft: 8,
                 }}
@@ -298,19 +303,6 @@ export default function MenuPage() {
                           </div>
                         ))}
                       </div>
-
-                      {ageGroups.map((g) => (
-                        <div key={g} style={{ marginTop: 4 }}>
-                          <small>{g}:</small>
-                          <InputNumber
-                            size="small"
-                            min={0}
-                            style={{ width: "100%" }}
-                            value={(peopleGrid[key] && peopleGrid[key][g]) || 0}
-                            onChange={(v) => updatePeople(d, m, g, v)}
-                          />
-                        </div>
-                      ))}
                     </div>
                   );
                 })}
@@ -318,18 +310,27 @@ export default function MenuPage() {
             ))}
           </div>
 
-          <div style={{ marginTop: 16, display: "flex", gap: 8 }}>
+          <div style={{ marginTop: 16, display: "flex", gap: 8, flexWrap: "wrap" }}>
             <Button type="primary" onClick={save}>
               Save Menu
             </Button>
-            <Button onClick={generateShoppingList}>Shopping List</Button>{" "}
+            <Radio.Group
+              value={shoppingScope}
+              onChange={(e) => setShoppingScope(e.target.value)}
+              style={{ marginLeft: 8 }}
+            >
+              <Radio.Button value="week">Whole Week</Radio.Button>
+              <Radio.Button value="day">One Day</Radio.Button>
+              <Radio.Button value="meal">One Meal</Radio.Button>
+            </Radio.Group>
+            <Button onClick={generateShoppingList}>Shopping List</Button>
             <Button onClick={printMenu}>Print</Button>
           </div>
         </div>
 
         <div
           style={{
-            width: 700,
+            width: 400,
             boxShadow: "0 2px 12px rgba(0,0,0,0.08)",
             borderRadius: 12,
             padding: 12,
