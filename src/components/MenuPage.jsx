@@ -1,3 +1,4 @@
+// src/components/MenuPage.jsx
 import React, { useEffect, useState } from "react";
 import { Button, message, Select, Modal, Input, List, Radio } from "antd";
 import { getAll, add, printToPDF } from "../utils/ipc";
@@ -19,8 +20,10 @@ export default function MenuPage() {
   const [profiles, setProfiles] = useState([]);
   const [selectedProfile, setSelectedProfile] = useState("");
 
-  // shopping list scope
-  const [shoppingScope, setShoppingScope] = useState("week"); // 'week' | 'day' | 'meal'
+  const [shoppingScope, setShoppingScope] = useState("week");
+  const [isScopeModalOpen, setIsScopeModalOpen] = useState(false);
+  const [scopeDay, setScopeDay] = useState("");
+  const [scopeMeal, setScopeMeal] = useState("");
 
   const days = [
     "Monday",
@@ -121,7 +124,7 @@ export default function MenuPage() {
     message.success("Added menu: " + newMenuName);
   }
 
-  // 🔹 Auto-load counts by selected profile (once connected to OptionsPage)
+  // Load profile counts (future hook)
   function loadProfileCounts() {
     if (!selectedProfile) return;
     const prof = profiles.find((p) => p.name === selectedProfile);
@@ -129,36 +132,56 @@ export default function MenuPage() {
     message.success(`Profile "${selectedProfile}" loaded`);
   }
 
-  // 🔹 Generate shopping list (scope-based)
-  function generateShoppingList() {
-    let keys = [];
+  // Generate shopping list
+  function handleScopeSelection() {
     if (shoppingScope === "week") {
+      generateShoppingList("week");
+    } else {
+      setIsScopeModalOpen(true);
+    }
+  }
+
+  function confirmScopeSelection() {
+    generateShoppingList(shoppingScope, scopeDay, scopeMeal);
+    setIsScopeModalOpen(false);
+  }
+
+  function generateShoppingList(scope = "week", day, meal) {
+    let keys = [];
+    if (scope === "week") {
       keys = Object.keys(grid).filter((k) =>
         k.startsWith(`${activeMenu}__W${weekOffset}`)
       );
-    } else if (shoppingScope === "day") {
-      const day = prompt("Enter day name (e.g. Monday):");
+    } else if (scope === "day") {
+      if (!day) return message.warning("Please select a day");
       keys = Object.keys(grid).filter((k) =>
         k.startsWith(`${activeMenu}__W${weekOffset}__${day}`)
       );
-    } else if (shoppingScope === "meal") {
-      const day = prompt("Enter day name (e.g. Monday):");
-      const meal = prompt("Enter meal (Breakfast/Lunch/Snack/Dinner):");
+    } else if (scope === "meal") {
+      if (!day || !meal) return message.warning("Select day and meal");
       keys = [
         `${activeMenu}__W${weekOffset}__${day}__${meal}`,
       ].filter((k) => grid[k]);
     }
 
     const items = keys.flatMap((k) => grid[k] || []);
-    if (items.length === 0) return message.info("Menu is empty for selection");
+    if (items.length === 0) return message.info("No items found for this selection");
 
     const txt = items.map((i) => `• ${i}`).join("<br>");
-    const html = `<h1>Shopping List (${shoppingScope})</h1><p>${txt}</p>`;
-    printToPDF(html);
-    message.success("Shopping list generated");
+    const html = `<h1>Shopping List (${scope})</h1><p>${txt}</p>`;
+
+    const w = window.open("", "_blank");
+    if (w) {
+      w.document.write(html);
+      w.document.close();
+      w.print();
+    } else {
+      printToPDF(html);
+    }
+    message.success("Shopping list ready");
   }
 
-  // 🔹 Print current menu
+  // Print menu (open preview)
   function printMenu() {
     let html = `<h1>${activeMenu} - ${weekLabel()}</h1>`;
     days.forEach((d) => {
@@ -170,8 +193,16 @@ export default function MenuPage() {
       });
       html += `</ul>`;
     });
-    printToPDF(html);
-    message.success("Menu PDF generated");
+
+    const w = window.open("", "_blank");
+    if (w) {
+      w.document.write(html);
+      w.document.close();
+      w.print();
+    } else {
+      printToPDF(html);
+    }
+    message.success("Print ready");
   }
 
   return (
@@ -323,7 +354,7 @@ export default function MenuPage() {
               <Radio.Button value="day">One Day</Radio.Button>
               <Radio.Button value="meal">One Meal</Radio.Button>
             </Radio.Group>
-            <Button onClick={generateShoppingList}>Shopping List</Button>
+            <Button onClick={handleScopeSelection}>Shopping List</Button>
             <Button onClick={printMenu}>Print</Button>
           </div>
         </div>
@@ -361,6 +392,7 @@ export default function MenuPage() {
         </div>
       </div>
 
+      {/* Add Recipe Modal */}
       <Modal
         title={`Add Recipe for ${selectedMeal} (${selectedDay})`}
         open={isAddRecipeModalOpen}
@@ -381,6 +413,7 @@ export default function MenuPage() {
         />
       </Modal>
 
+      {/* Add Menu Modal */}
       <Modal
         title="Add New Menu"
         open={isAddingMenu}
@@ -393,6 +426,40 @@ export default function MenuPage() {
           value={newMenuName}
           onChange={(e) => setNewMenuName(e.target.value)}
         />
+      </Modal>
+
+      {/* Scope Selection Modal */}
+      <Modal
+        title="Select Scope"
+        open={isScopeModalOpen}
+        onCancel={() => setIsScopeModalOpen(false)}
+        onOk={confirmScopeSelection}
+        okText="Generate"
+      >
+        {shoppingScope !== "week" && (
+          <>
+            <div style={{ marginBottom: 8 }}>
+              <span>Day:</span>
+              <Select
+                value={scopeDay}
+                onChange={setScopeDay}
+                style={{ width: "100%", marginTop: 4 }}
+                options={days.map((d) => ({ label: d, value: d }))}
+              />
+            </div>
+            {shoppingScope === "meal" && (
+              <div>
+                <span>Meal:</span>
+                <Select
+                  value={scopeMeal}
+                  onChange={setScopeMeal}
+                  style={{ width: "100%", marginTop: 4 }}
+                  options={meals.map((m) => ({ label: m, value: m }))}
+                />
+              </div>
+            )}
+          </>
+        )}
       </Modal>
     </div>
   );

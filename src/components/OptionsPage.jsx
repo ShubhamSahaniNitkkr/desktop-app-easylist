@@ -7,14 +7,14 @@ import {
   message,
   InputNumber,
   Divider,
-  List,
   Typography,
   Space,
-  Checkbox,
+  Collapse,
 } from "antd";
-import { getAll, add, update } from "../utils/ipc";
+import { getAll, update } from "../utils/ipc";
 
 const { Title, Text } = Typography;
+const { Panel } = Collapse;
 
 export default function OptionsPage() {
   const [options, setOptions] = useState(null);
@@ -26,24 +26,28 @@ export default function OptionsPage() {
   const [newProfileName, setNewProfileName] = useState("");
   const [profiles, setProfiles] = useState([]);
   const [activeProfile, setActiveProfile] = useState(null);
+  const [sqlInput, setSqlInput] = useState("");
   const [days] = useState(["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]);
   const [meals] = useState(["Breakfast", "Lunch", "Snack", "Dinner"]);
 
-  // ⚙️ Load options from DB
   useEffect(() => {
     (async () => {
       const all = await getAll();
       const opts = all.options || {};
+      if (!opts.standardPortions) opts.standardPortions = [];
       setOptions(opts);
       setProfiles(opts.profiles || []);
     })();
   }, []);
 
-  // 🔹 Add language/unit/category/allergen/supplier dynamically
+  async function updateOptions(updated) {
+    setOptions(updated);
+    await update("options", null, updated);
+  }
+
   function addItem(type, value) {
     if (!value.trim()) return message.error("Value required");
-    if (options[type]?.includes(value))
-      return message.warning("Already exists");
+    if (options[type]?.includes(value)) return message.warning("Already exists");
     const newArr = [...(options[type] || []), value];
     const updated = { ...options, [type]: newArr };
     setOptions(updated);
@@ -51,12 +55,6 @@ export default function OptionsPage() {
     message.success(`${type} added`);
   }
 
-  async function updateOptions(updated) {
-    setOptions(updated);
-    await update("options", null, updated);
-  }
-
-  // 🔹 Remove option item
   function removeItem(type, value) {
     const filtered = (options[type] || []).filter((x) => x !== value);
     const updated = { ...options, [type]: filtered };
@@ -65,7 +63,7 @@ export default function OptionsPage() {
     message.info(`${value} removed`);
   }
 
-  // 🔹 Add new age group (client requested dynamic)
+  // ---------- AGE GROUPS ----------
   function addAgeGroup() {
     const name = prompt("Enter age group label (e.g., 3–5 years):");
     if (!name) return;
@@ -77,17 +75,19 @@ export default function OptionsPage() {
     updateOptions(updated);
   }
 
-  // 🔹 Remove age group
   function removeAgeGroup(label) {
     const updated = {
       ...options,
       ageGroups: (options.ageGroups || []).filter((x) => x !== label),
+      standardPortions: (options.standardPortions || []).filter(
+        (sp) => sp.ageGroup !== label
+      ),
     };
     setOptions(updated);
     updateOptions(updated);
   }
 
-  // 🔹 Create or switch profile
+  // ---------- PROFILES ----------
   function addProfile() {
     if (!newProfileName.trim()) return message.error("Profile name required");
     if (profiles.find((p) => p.name === newProfileName))
@@ -111,7 +111,6 @@ export default function OptionsPage() {
     setActiveProfile(name);
   }
 
-  // 🔹 Update cell in profile (people per meal)
   function updateProfileCell(profileName, day, meal, label, value) {
     const updatedProfiles = profiles.map((p) => {
       if (p.name !== profileName) return p;
@@ -129,13 +128,26 @@ export default function OptionsPage() {
     updateOptions(updatedOptions);
   }
 
-  // 🔹 Render grid per selected profile
-  function renderProfileGrid() {
-    if (!activeProfile) return <Text>Select a profile to view/edit</Text>;
-    const profile = profiles.find((p) => p.name === activeProfile);
-    if (!profile) return null;
+  // ---------- STANDARD PORTIONS ----------
+  function updatePortion(ageGroup, category, value) {
+    const list = [...(options.standardPortions || [])];
+    const idx = list.findIndex(
+      (p) => p.ageGroup === ageGroup && p.category === category
+    );
+    if (idx >= 0) list[idx].grams = value;
+    else list.push({ ageGroup, category, grams: value });
+    const updated = { ...options, standardPortions: list };
+    setOptions(updated);
+    updateOptions(updated);
+  }
 
+  function renderPortionTable() {
     const ageGroups = options.ageGroups || [];
+    const cats = options.categories || [];
+    const data = options.standardPortions || [];
+    if (ageGroups.length === 0 || cats.length === 0)
+      return <Text type="secondary">Add some age groups and categories first.</Text>;
+
     return (
       <div
         style={{
@@ -155,78 +167,85 @@ export default function OptionsPage() {
             marginBottom: 6,
           }}
         >
-          <div>Day / Meal</div>
+          <div>Category</div>
           {ageGroups.map((a) => (
             <div key={a} style={{ textAlign: "center" }}>
               {a}
             </div>
           ))}
         </div>
-
-        {days.map((d) => (
-          <div key={d} style={{ marginBottom: 12 }}>
-            <div style={{ fontWeight: 700, marginBottom: 4 }}>{d}</div>
-            {meals.map((m) => (
-              <div
-                key={m}
-                style={{
-                  display: "grid",
-                  gridTemplateColumns: `160px repeat(${ageGroups.length}, 100px)`,
-                  alignItems: "center",
-                  marginBottom: 6,
-                }}
-              >
-                <div>{m}</div>
-                {ageGroups.map((lbl) => {
-                  const value = profile.table?.[d]?.[m]?.[lbl] || 0;
-                  return (
-                    <InputNumber
-                      key={lbl}
-                      min={0}
-                      value={value}
-                      onChange={(v) =>
-                        updateProfileCell(activeProfile, d, m, lbl, v)
-                      }
-                      style={{ width: 80 }}
-                    />
-                  );
-                })}
-              </div>
-            ))}
+        {cats.map((cat) => (
+          <div
+            key={cat}
+            style={{
+              display: "grid",
+              gridTemplateColumns: `160px repeat(${ageGroups.length}, 100px)`,
+              alignItems: "center",
+              marginBottom: 6,
+            }}
+          >
+            <div>{cat}</div>
+            {ageGroups.map((ag) => {
+              const found = data.find(
+                (p) => p.ageGroup === ag && p.category === cat
+              );
+              const grams = found ? found.grams : 0;
+              return (
+                <InputNumber
+                  key={`${ag}-${cat}`}
+                  min={0}
+                  value={grams}
+                  onChange={(v) => updatePortion(ag, cat, v)}
+                  style={{ width: 80 }}
+                />
+              );
+            })}
           </div>
         ))}
       </div>
     );
   }
 
-  if (!options)
-    return <div style={{ padding: 20 }}>Loading configuration...</div>;
+  // ---------- SQL DATA INJECTION ----------
+  async function injectSqlData() {
+    try {
+      if (!sqlInput.trim()) return message.warning("No SQL entered");
+      // For demonstration: parse INSERT INTO style basic commands
+      const lower = sqlInput.toLowerCase();
+      if (lower.includes("insert into ingredients")) {
+        message.success("SQL parsed — ingredients injected (simulation)");
+      } else {
+        message.info("SQL accepted but not applied (demo mode)");
+      }
+      setSqlInput("");
+    } catch (e) {
+      message.error("Invalid SQL format");
+    }
+  }
+
+  if (!options) return <div style={{ padding: 20 }}>Loading configuration...</div>;
 
   return (
     <div style={{ padding: 20 }}>
       <Title level={3}>Options</Title>
 
       <Space direction="vertical" style={{ width: "100%" }}>
-        {/* ---------- Basic Config ---------- */}
+        {/* ---------- BASIC CONFIG ---------- */}
         <Card title="General Settings">
-          <RowItem
-            label="Default Language"
-            content={
-              <Select
-                value={options.defaultLang}
-                onChange={(v) =>
-                  updateOptions({ ...options, defaultLang: v })
-                }
-              >
-                {(options.languages || []).map((l) => (
-                  <Select.Option key={l} value={l}>
-                    {l}
-                  </Select.Option>
-                ))}
-              </Select>
-            }
-          />
-          <Divider />
+          <div style={{ marginBottom: 12 }}>
+            <Text strong>Default Language</Text>
+            <Select
+              value={options.defaultLang}
+              onChange={(v) => updateOptions({ ...options, defaultLang: v })}
+              style={{ marginLeft: 8 }}
+            >
+              {(options.languages || []).map((l) => (
+                <Select.Option key={l} value={l}>
+                  {l}
+                </Select.Option>
+              ))}
+            </Select>
+          </div>
 
           <ConfigList
             title="Languages"
@@ -279,7 +298,7 @@ export default function OptionsPage() {
           />
         </Card>
 
-        {/* ---------- Age Groups ---------- */}
+        {/* ---------- AGE GROUPS ---------- */}
         <Card
           title="Age Groups"
           extra={<Button onClick={addAgeGroup}>+ Add Age Group</Button>}
@@ -298,18 +317,19 @@ export default function OptionsPage() {
               }}
             >
               <span>{a}</span>
-              <Button
-                size="small"
-                danger
-                onClick={() => removeAgeGroup(a)}
-              >
+              <Button size="small" danger onClick={() => removeAgeGroup(a)}>
                 Remove
               </Button>
             </div>
           ))}
         </Card>
 
-        {/* ---------- Profiles (people per meal) ---------- */}
+        {/* ---------- STANDARD PORTIONS ---------- */}
+        <Card title="Standard Portions (per Age Group & Category)">
+          {renderPortionTable()}
+        </Card>
+
+        {/* ---------- PROFILES ---------- */}
         <Card
           title="Profiles (People per Meal)"
           extra={
@@ -337,33 +357,56 @@ export default function OptionsPage() {
             ))}
           </Select>
 
-          {renderProfileGrid()}
+          {activeProfile ? (
+            <ProfileGrid
+              profile={profiles.find((p) => p.name === activeProfile)}
+              options={options}
+              updateProfileCell={updateProfileCell}
+              days={days}
+              meals={meals}
+              activeProfile={activeProfile}
+            />
+          ) : (
+            <Text type="secondary">Select a profile to edit</Text>
+          )}
         </Card>
+
+        {/* ---------- SQL INJECTION ---------- */}
+        <Collapse>
+          <Panel header="Advanced: SQL Data Injection (for import)" key="1">
+            <Text type="secondary">
+              Paste raw SQL INSERT commands here (ingredients/recipes). Example:
+              <br />
+              <code>
+                INSERT INTO ingredients (name, unit, category) VALUES
+                ('Rice','g','starch');
+              </code>
+            </Text>
+            <Input.TextArea
+              rows={6}
+              value={sqlInput}
+              onChange={(e) => setSqlInput(e.target.value)}
+              style={{ marginTop: 10 }}
+              placeholder="Paste SQL here..."
+            />
+            <Button
+              onClick={injectSqlData}
+              type="primary"
+              style={{ marginTop: 8 }}
+            >
+              Inject SQL
+            </Button>
+          </Panel>
+        </Collapse>
       </Space>
     </div>
   );
 }
 
-// ---------- Helper Components ----------
-function RowItem({ label, content }) {
-  return (
-    <div
-      style={{
-        display: "flex",
-        justifyContent: "space-between",
-        alignItems: "center",
-        marginBottom: 8,
-      }}
-    >
-      <Text strong>{label}</Text>
-      {content}
-    </div>
-  );
-}
-
+// ---------- HELPER COMPONENTS ----------
 function ConfigList({ title, data, addLabel, onAdd, newValue, setNewValue, onRemove }) {
   return (
-    <div style={{ marginTop: 16 }}>
+    <div style={{ marginTop: 12 }}>
       <Text strong>{title}</Text>
       <div style={{ display: "flex", gap: 8, marginTop: 4, marginBottom: 6 }}>
         <Input
@@ -373,29 +416,86 @@ function ConfigList({ title, data, addLabel, onAdd, newValue, setNewValue, onRem
         />
         <Button onClick={onAdd}>Add</Button>
       </div>
-      <div>
-        {(data || []).map((v) => (
-          <div
-            key={v}
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              marginBottom: 4,
-            }}
-          >
-            <span>{v}</span>
-            <Button
-              type="link"
-              danger
-              size="small"
-              onClick={() => onRemove(v)}
-            >
-              remove
-            </Button>
+      {(data || []).map((v) => (
+        <div
+          key={v}
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            marginBottom: 4,
+          }}
+        >
+          <span>{v}</span>
+          <Button type="link" danger size="small" onClick={() => onRemove(v)}>
+            remove
+          </Button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function ProfileGrid({ profile, options, updateProfileCell, days, meals, activeProfile }) {
+  const ageGroups = options.ageGroups || [];
+  return (
+    <div
+      style={{
+        maxHeight: 400,
+        overflowY: "auto",
+        border: "1px solid #eee",
+        padding: 8,
+        borderRadius: 6,
+        marginTop: 8,
+      }}
+    >
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: `160px repeat(${ageGroups.length}, 100px)`,
+          fontWeight: 600,
+          marginBottom: 6,
+        }}
+      >
+        <div>Day / Meal</div>
+        {ageGroups.map((a) => (
+          <div key={a} style={{ textAlign: "center" }}>
+            {a}
           </div>
         ))}
       </div>
+      {days.map((d) => (
+        <div key={d} style={{ marginBottom: 12 }}>
+          <div style={{ fontWeight: 700, marginBottom: 4 }}>{d}</div>
+          {meals.map((m) => (
+            <div
+              key={m}
+              style={{
+                display: "grid",
+                gridTemplateColumns: `160px repeat(${ageGroups.length}, 100px)`,
+                alignItems: "center",
+                marginBottom: 6,
+              }}
+            >
+              <div>{m}</div>
+              {ageGroups.map((lbl) => {
+                const value = profile.table?.[d]?.[m]?.[lbl] || 0;
+                return (
+                  <InputNumber
+                    key={lbl}
+                    min={0}
+                    value={value}
+                    onChange={(v) =>
+                      updateProfileCell(activeProfile, d, m, lbl, v)
+                    }
+                    style={{ width: 80 }}
+                  />
+                );
+              })}
+            </div>
+          ))}
+        </div>
+      ))}
     </div>
   );
 }

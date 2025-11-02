@@ -1,4 +1,5 @@
-import React, { useEffect, useState } from "react";
+// src/components/RecipePage.jsx
+import React, { useEffect, useState, useMemo } from "react";
 import {
   Input,
   Button,
@@ -15,7 +16,7 @@ import {
   Image,
   List,
 } from "antd";
-import { getAll, add, pickImage, printToPDF } from "../utils/ipc";
+import { getAll, add, pickImage /* printToPDF removed from usage here */ } from "../utils/ipc";
 
 const { Title, Text } = Typography;
 
@@ -34,7 +35,6 @@ export default function RecipePage() {
     youtube: "",
   });
   const [targetWeight, setTargetWeight] = useState(null);
-  const [netWeight, setNetWeight] = useState(0);
 
   // Load data from DB
   useEffect(() => {
@@ -59,10 +59,9 @@ export default function RecipePage() {
       youtube: "",
     });
     setTargetWeight(null);
-    setNetWeight(0);
   }
 
-  // Helper: Add ingredient row
+  // Helper: Add ingredient row (preserve image and other fields)
   function addIngredientRow() {
     setRecipe((r) => ({
       ...r,
@@ -83,24 +82,25 @@ export default function RecipePage() {
   function updateIng(i, field, value) {
     setRecipe((r) => {
       const updated = { ...r };
-      updated.ingredients = [...r.ingredients];
-      updated.ingredients[i][field] = value;
+      updated.ingredients = [...(r.ingredients || [])];
+      updated.ingredients[i] = { ...(updated.ingredients[i] || {}), [field]: value };
       return updated;
     });
   }
 
   function selectIngredient(i, name) {
     const meta = (ingredientsDb || []).find(
-      (x) => x.name.toLowerCase() === (name || "").toLowerCase()
+      (x) => x.name && x.name.toLowerCase() === (name || "").toLowerCase()
     );
     setRecipe((r) => {
       const updated = { ...r };
-      updated.ingredients = [...r.ingredients];
-      updated.ingredients[i].name = name;
+      updated.ingredients = [...(r.ingredients || [])];
+      updated.ingredients[i] = { ...(updated.ingredients[i] || {}), name };
       if (meta) {
         updated.ingredients[i].unit = meta.unit || "g";
-        updated.ingredients[i].ingredientLoss = meta.ingredientLoss || 0;
-        updated.ingredients[i].prepLoss = meta.prepLoss || 0;
+        // keep earlier fields if present
+        updated.ingredients[i].ingredientLoss = meta.ingredientLoss || updated.ingredients[i].ingredientLoss || 0;
+        updated.ingredients[i].prepLoss = meta.prepLoss || updated.ingredients[i].prepLoss || 0;
       }
       return updated;
     });
@@ -116,8 +116,8 @@ export default function RecipePage() {
   function updateStep(i, field, value) {
     setRecipe((r) => {
       const updated = { ...r };
-      updated.steps = [...r.steps];
-      updated.steps[i][field] = value;
+      updated.steps = [...(r.steps || [])];
+      updated.steps[i] = { ...(updated.steps[i] || {}), [field]: value };
       return updated;
     });
   }
@@ -128,7 +128,7 @@ export default function RecipePage() {
       const name = (recipe.name || "").trim();
       if (!name) return message.error("Recipe name required");
 
-      const copy = { ...recipe };
+      const copy = JSON.parse(JSON.stringify(recipe));
       if (!copy.rating && copy.rating !== 0) copy.rating = 100;
 
       await add("recipes", copy);
@@ -142,8 +142,15 @@ export default function RecipePage() {
 
   // Image picker
   async function pickImg() {
-    const res = await pickImage();
-    if (!res.canceled) setRecipe((r) => ({ ...r, image: res.data }));
+    try {
+      const res = await pickImage();
+      if (!res.canceled) {
+        setRecipe((r) => ({ ...r, image: res.data }));
+        message.success("Image attached");
+      }
+    } catch (err) {
+      message.error("Image pick failed");
+    }
   }
 
   // Weight calculation helpers
@@ -161,8 +168,8 @@ export default function RecipePage() {
     return f1 * f2 * f3;
   }
 
-  // Compute scaled ingredients & total net weight
-  function computeScaledIngredients() {
+  // UseMemo to compute scaled ingredients and net weight (no setState inside render)
+  const scaled = useMemo(() => {
     const ingredients = recipe.ingredients || [];
     if (ingredients.length === 0) return [];
 
@@ -170,67 +177,82 @@ export default function RecipePage() {
     const metaCache = {};
 
     for (const i of ingredients) {
+      const nameKey = (i.name || "").toLowerCase();
       const meta =
-        metaCache[i.name] ||
-        ingredientsDb.find(
-          (m) => m.name.toLowerCase() === (i.name || "").toLowerCase()
-        );
-      metaCache[i.name] = meta;
-      const grams = gramsFromUnit(i.qty, i.unit, meta);
+        metaCache[nameKey] ||
+        ingredientsDb.find((m) => m.name && m.name.toLowerCase() === nameKey);
+      metaCache[nameKey] = meta;
+      const grams = gramsFromUnit(i.qty || 0, i.unit, meta);
       const net = grams * netYieldFraction(i.ingredientLoss, i.prepLoss, i.cookingLoss);
       baseNet += net;
     }
 
-    const ratio =
-      targetWeight && baseNet > 0 ? targetWeight / baseNet : 1;
-    const scaled = ingredients.map((i) => {
-      const meta = metaCache[i.name];
-      const scaledQty = i.qty * ratio;
+    const ratio = targetWeight && baseNet > 0 ? Number(targetWeight) / baseNet : 1;
+
+    return ingredients.map((i) => {
+      const meta = metaCache[(i.name || "").toLowerCase()];
+      const scaledQty = (Number(i.qty) || 0) * ratio;
       const scaledGrams =
         gramsFromUnit(scaledQty, i.unit, meta) *
         netYieldFraction(i.ingredientLoss, i.prepLoss, i.cookingLoss);
-      return { ...i, scaledQty, scaledInGrams: scaledGrams };
+      return { ...i, scaledQty, scaledInGrams: scaledGrams || 0 };
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recipe, targetWeight, ingredientsDb, options]);
 
-    setNetWeight(
-      scaled.reduce((a, b) => a + (b.scaledInGrams || 0), 0)
-    );
-    return scaled;
-  }
+  const netWeight = useMemo(() => {
+    return scaled.reduce((a, b) => a + (b.scaledInGrams || 0), 0);
+  }, [scaled]);
 
-  const scaled = computeScaledIngredients();
-
-  // Print recipe (scaled)
+  // Print recipe (open print preview instead of save dialog)
   async function onPrint() {
     try {
-      const html = `<html><body>
-      <h1>${recipe.name}</h1>
+      const html = `<html><head><meta charset="utf-8"><title>${recipe.name || ""}</title></head><body>
+      <h1>${recipe.name || ""}</h1>
       <h3>Ingredients (Scaled)</h3>
       <ul>
       ${scaled
           .map(
             (i) =>
-              `<li>${i.scaledQty.toFixed(2)} ${i.unit} ${i.name} — Net: ${i.scaledInGrams.toFixed(
-                1
-              )} g</li>`
+              `<li>${Number(i.scaledQty || 0).toFixed(2)} ${i.unit || ""} ${i.name || ""} — Net: ${Number(
+                i.scaledInGrams || 0
+              ).toFixed(1)} g</li>`
           )
           .join("")}
       </ul>
-      <h4>Total Net Weight: ${netWeight.toFixed(1)} g</h4>
+      <h4>Total Net Weight: ${Number(netWeight || 0).toFixed(1)} g</h4>
       </body></html>`;
 
-      const res = await printToPDF(html);
-      if (res?.path) message.success("PDF saved at " + res.path);
-      else message.info("Print cancelled");
+      // Open a new window and trigger browser print dialog (avoids Save dialog from main)
+      const w = window.open("", "_blank", "noopener,noreferrer");
+      if (!w) {
+        // fallback to IPC PDF save if blocked
+        message.warning("Popup blocked — falling back to Save PDF");
+        const res = await (window.api && window.api.printToPDF ? window.api.printToPDF(html) : null);
+        if (res && res.path) message.success("PDF saved at " + res.path);
+        return;
+      }
+      w.document.write(html);
+      w.document.close();
+      w.focus();
+      // Allow some time for rendering before print (small delay)
+      setTimeout(() => {
+        try {
+          w.print();
+          // optionally close after printing
+          // w.close();
+        } catch (e) {
+          // ignore
+        }
+      }, 250);
     } catch (err) {
-      message.error("Print failed: " + err.message);
+      message.error("Print failed: " + (err.message || ""));
     }
   }
 
   function loadRecipe(r) {
     setRecipe({ ...r });
     setTargetWeight(null);
-    setNetWeight(0);
   }
 
   return (
@@ -249,18 +271,14 @@ export default function RecipePage() {
                 <Text strong>Recipe Name</Text>
                 <Input
                   value={recipe.name}
-                  onChange={(e) =>
-                    setRecipe((r) => ({ ...r, name: e.target.value }))
-                  }
+                  onChange={(e) => setRecipe((r) => ({ ...r, name: e.target.value }))}
                 />
               </Col>
               <Col span={8}>
                 <Text strong>Category</Text>
                 <Select
                   value={recipe.category}
-                  onChange={(v) =>
-                    setRecipe((r) => ({ ...r, category: v }))
-                  }
+                  onChange={(v) => setRecipe((r) => ({ ...r, category: v }))}
                   style={{ width: "100%" }}
                 >
                   {(options?.categories || []).map((c) => (
@@ -274,9 +292,7 @@ export default function RecipePage() {
                 <Text strong>YouTube Link</Text>
                 <Input
                   value={recipe.youtube}
-                  onChange={(e) =>
-                    setRecipe((r) => ({ ...r, youtube: e.target.value }))
-                  }
+                  onChange={(e) => setRecipe((r) => ({ ...r, youtube: e.target.value }))}
                 />
               </Col>
             </Row>
@@ -362,10 +378,7 @@ export default function RecipePage() {
                   <Button
                     danger
                     onClick={() =>
-                      setRecipe((r) => ({
-                        ...r,
-                        ingredients: r.ingredients.filter((_, i) => i !== idx),
-                      }))
+                      setRecipe((r) => ({ ...r, ingredients: (r.ingredients || []).filter((_, i) => i !== idx) }))
                     }
                   >
                     X
@@ -383,29 +396,13 @@ export default function RecipePage() {
             {(recipe.steps || []).map((s, i) => (
               <Row key={i} gutter={8} style={{ marginBottom: 8 }}>
                 <Col span={16}>
-                  <Input.TextArea
-                    rows={3}
-                    value={s.text}
-                    onChange={(e) => updateStep(i, "text", e.target.value)}
-                  />
+                  <Input.TextArea rows={3} value={s.text} onChange={(e) => updateStep(i, "text", e.target.value)} />
                 </Col>
                 <Col span={4}>
-                  <InputNumber
-                    value={s.time}
-                    onChange={(v) => updateStep(i, "time", v)}
-                    min={0}
-                    style={{ width: "100%" }}
-                    placeholder="min"
-                  />
+                  <InputNumber value={s.time} onChange={(v) => updateStep(i, "time", v)} min={0} style={{ width: "100%" }} placeholder="min" />
                 </Col>
                 <Col span={4}>
-                  <InputNumber
-                    value={s.temperature}
-                    onChange={(v) => updateStep(i, "temperature", v)}
-                    min={0}
-                    style={{ width: "100%" }}
-                    placeholder="°C"
-                  />
+                  <InputNumber value={s.temperature} onChange={(v) => updateStep(i, "temperature", v)} min={0} style={{ width: "100%" }} placeholder="°C" />
                 </Col>
               </Row>
             ))}
@@ -422,12 +419,7 @@ export default function RecipePage() {
               <Button onClick={onPrint}>Print</Button>
               <Checkbox
                 checked={recipe.asIngredient}
-                onChange={(e) =>
-                  setRecipe((r) => ({
-                    ...r,
-                    asIngredient: e.target.checked,
-                  }))
-                }
+                onChange={(e) => setRecipe((r) => ({ ...r, asIngredient: e.target.checked }))}
               >
                 Use as Ingredient
               </Checkbox>
@@ -436,12 +428,7 @@ export default function RecipePage() {
             <Divider />
 
             <Text strong>Target Output Weight (g)</Text>
-            <InputNumber
-              min={0}
-              value={targetWeight}
-              onChange={setTargetWeight}
-              style={{ width: "100%", marginTop: 4 }}
-            />
+            <InputNumber min={0} value={targetWeight} onChange={setTargetWeight} style={{ width: "100%", marginTop: 4 }} />
 
             {netWeight > 0 && (
               <div style={{ marginTop: 8 }}>
@@ -463,7 +450,7 @@ export default function RecipePage() {
         <Col span={8}>
           <Card title="Saved Recipes" style={{ borderRadius: 12 }}>
             <List
-              dataSource={[...recipes].reverse()}
+              dataSource={[...(recipes || [])].reverse()}
               renderItem={(item) => (
                 <List.Item
                   onClick={() => loadRecipe(item)}
