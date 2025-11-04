@@ -27,7 +27,10 @@ export default function OptionsPage() {
   const [profiles, setProfiles] = useState([]);
   const [activeProfile, setActiveProfile] = useState(null);
   const [sqlInput, setSqlInput] = useState("");
-  const [days] = useState(["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"]);
+  const [sqlResponse, setSqlResponse] = useState("");
+  const [days] = useState([
+    "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"
+  ]);
   const [meals] = useState(["Breakfast", "Lunch", "Snack", "Dinner"]);
 
   useEffect(() => {
@@ -35,6 +38,7 @@ export default function OptionsPage() {
       const all = await getAll();
       const opts = all.options || {};
       if (!opts.standardPortions) opts.standardPortions = [];
+      if (!opts.ageGroups) opts.ageGroups = [];
       setOptions(opts);
       setProfiles(opts.profiles || []);
     })();
@@ -67,12 +71,16 @@ export default function OptionsPage() {
   function addAgeGroup() {
     const name = prompt("Enter age group label (e.g., 3–5 years):");
     if (!name) return;
+    if ((options.ageGroups || []).includes(name))
+      return message.warning("This age group already exists");
+
     const updated = {
       ...options,
       ageGroups: [...(options.ageGroups || []), name],
     };
     setOptions(updated);
     updateOptions(updated);
+    message.success(`Age group '${name}' added`);
   }
 
   function removeAgeGroup(label) {
@@ -206,20 +214,30 @@ export default function OptionsPage() {
     );
   }
 
-  // ---------- SQL DATA INJECTION ----------
+  // ---------- SQL INJECTION ----------
   async function injectSqlData() {
     try {
       if (!sqlInput.trim()) return message.warning("No SQL entered");
-      // For demonstration: parse INSERT INTO style basic commands
+
       const lower = sqlInput.toLowerCase();
+      let resp = "";
       if (lower.includes("insert into ingredients")) {
-        message.success("SQL parsed — ingredients injected (simulation)");
+        resp = "SQL parsed and injected into Ingredients table (simulated).";
+        message.success("SQL parsed — ingredients injected");
+      } else if (lower.includes("insert into recipes")) {
+        resp = "SQL parsed and injected into Recipes table (simulated).";
+        message.success("SQL parsed — recipes injected");
       } else {
-        message.info("SQL accepted but not applied (demo mode)");
+        resp = "SQL accepted but no known table found (demo mode).";
+        message.info("SQL accepted (no change).");
       }
+
+      setSqlResponse(resp);
       setSqlInput("");
     } catch (e) {
-      message.error("Invalid SQL format");
+      const errMsg = "Invalid SQL format or parse error.";
+      setSqlResponse(errMsg);
+      message.error(errMsg);
     }
   }
 
@@ -325,7 +343,7 @@ export default function OptionsPage() {
         </Card>
 
         {/* ---------- STANDARD PORTIONS ---------- */}
-        <Card title="Standard Portions (per Age Group & Category)">
+        <Card title="Grams (per Age Group & Category)">
           {renderPortionTable()}
         </Card>
 
@@ -396,6 +414,20 @@ export default function OptionsPage() {
             >
               Inject SQL
             </Button>
+            {sqlResponse && (
+              <div
+                style={{
+                  background: "#f6f6f6",
+                  padding: 10,
+                  borderRadius: 6,
+                  marginTop: 10,
+                  fontFamily: "monospace",
+                  whiteSpace: "pre-wrap",
+                }}
+              >
+                {sqlResponse}
+              </div>
+            )}
           </Panel>
         </Collapse>
       </Space>

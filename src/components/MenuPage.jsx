@@ -1,4 +1,3 @@
-// src/components/MenuPage.jsx
 import React, { useEffect, useState } from "react";
 import { Button, message, Select, Modal, Input, List, Radio } from "antd";
 import { getAll, add, printToPDF } from "../utils/ipc";
@@ -24,15 +23,10 @@ export default function MenuPage() {
   const [isScopeModalOpen, setIsScopeModalOpen] = useState(false);
   const [scopeDay, setScopeDay] = useState("");
   const [scopeMeal, setScopeMeal] = useState("");
+  const [options, setOptions] = useState(null);
 
   const days = [
-    "Monday",
-    "Tuesday",
-    "Wednesday",
-    "Thursday",
-    "Friday",
-    "Saturday",
-    "Sunday",
+    "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"
   ];
   const meals = ["Breakfast", "Lunch", "Snack", "Dinner"];
 
@@ -42,6 +36,11 @@ export default function MenuPage() {
       setRecipes(all.recipes || []);
       setSavedMenus(all.menus || []);
       setProfiles(all.options?.profiles || []);
+      setOptions(all.options || {});
+
+      // Auto-select default profile if available
+      const defaultProfile = all.options?.profiles?.[0]?.name || "";
+      if (defaultProfile) setSelectedProfile(defaultProfile);
     })();
   }, []);
 
@@ -124,15 +123,15 @@ export default function MenuPage() {
     message.success("Added menu: " + newMenuName);
   }
 
-  // Load profile counts (future hook)
+  // Load selected profile (info only)
   function loadProfileCounts() {
-    if (!selectedProfile) return;
+    if (!selectedProfile) return message.warning("Select a profile");
     const prof = profiles.find((p) => p.name === selectedProfile);
     if (!prof) return message.warning("Profile not found");
     message.success(`Profile "${selectedProfile}" loaded`);
   }
 
-  // Generate shopping list
+  // -------- SHOPPING LIST (with weights) --------
   function handleScopeSelection() {
     if (shoppingScope === "week") {
       generateShoppingList("week");
@@ -144,6 +143,14 @@ export default function MenuPage() {
   function confirmScopeSelection() {
     generateShoppingList(shoppingScope, scopeDay, scopeMeal);
     setIsScopeModalOpen(false);
+  }
+
+  function getStandardPortion(category, ageGroup) {
+    const list = options?.standardPortions || [];
+    const found = list.find(
+      (p) => p.ageGroup === ageGroup && p.category === category
+    );
+    return found ? found.grams || 0 : 0;
   }
 
   function generateShoppingList(scope = "week", day, meal) {
@@ -167,7 +174,34 @@ export default function MenuPage() {
     const items = keys.flatMap((k) => grid[k] || []);
     if (items.length === 0) return message.info("No items found for this selection");
 
-    const txt = items.map((i) => `• ${i}`).join("<br>");
+    const prof = profiles.find((p) => p.name === selectedProfile);
+    const ageGroups = options?.ageGroups || [];
+
+    const counts = {};
+    if (prof?.table) {
+      for (const d of Object.keys(prof.table)) {
+        for (const m of Object.keys(prof.table[d])) {
+          for (const a of Object.keys(prof.table[d][m])) {
+            counts[a] = (counts[a] || 0) + Number(prof.table[d][m][a] || 0);
+          }
+        }
+      }
+    }
+
+    // Weight calculation by standard portions
+    const weights = {};
+    for (const recipe of items) {
+      const cat = "General"; // Simplified; would map per recipe category
+      for (const a of ageGroups) {
+        const grams = getStandardPortion(cat, a);
+        const totalPeople = counts[a] || 0;
+        weights[recipe] = (weights[recipe] || 0) + grams * totalPeople;
+      }
+    }
+
+    const txt = Object.entries(weights)
+      .map(([name, weight]) => `• ${name} — ${weight > 0 ? weight.toFixed(1) + " g" : "No data"}`)
+      .join("<br>");
     const html = `<h1>Shopping List (${scope})</h1><p>${txt}</p>`;
 
     const w = window.open("", "_blank");
@@ -181,7 +215,7 @@ export default function MenuPage() {
     message.success("Shopping list ready");
   }
 
-  // Print menu (open preview)
+  // -------- PRINT MENU --------
   function printMenu() {
     let html = `<h1>${activeMenu} - ${weekLabel()}</h1>`;
     days.forEach((d) => {

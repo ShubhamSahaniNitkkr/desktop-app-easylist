@@ -1,5 +1,5 @@
 // src/components/IngredientPage.jsx
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useCallback } from "react";
 import {
   Form,
   Input,
@@ -24,6 +24,7 @@ export default function IngredientPage() {
   const [ingredients, setIngredients] = useState([]);
   const [form] = Form.useForm();
   const [loadingList, setLoadingList] = useState(false);
+  const [searchTimer, setSearchTimer] = useState(null);
 
   useEffect(() => {
     (async () => {
@@ -33,13 +34,30 @@ export default function IngredientPage() {
     })();
   }, []);
 
+  // Debounced query
+  const onQuery = useCallback(
+    (q) => {
+      if (searchTimer) clearTimeout(searchTimer);
+      const timer = setTimeout(async () => {
+        setLoadingList(true);
+        try {
+          const list = await queryIngredients(q);
+          setIngredients(list);
+        } finally {
+          setLoadingList(false);
+        }
+      }, 300);
+      setSearchTimer(timer);
+    },
+    [searchTimer]
+  );
+
   async function onSave() {
     try {
       const vals = await form.validateFields();
       const name = vals.name.trim();
       if (!name) return message.error("Name required");
-      if (/^\d+$/.test(name))
-        return message.error("Name cannot be only numbers");
+      if (/^\d+$/.test(name)) return message.error("Name cannot be only numbers");
 
       const obj = {
         name,
@@ -47,8 +65,9 @@ export default function IngredientPage() {
         article: vals.article || "",
         category: vals.category || options?.categories?.[0] || "",
         unit: vals.unit || options?.units?.[0] || "g",
-        ingredientLoss: Number(vals.ingredientLoss || 0), // ✅ new field
+        ingredientLoss: Number(vals.ingredientLoss || 0),
         prepLoss: Number(vals.prepLoss || 0),
+        cookingLoss: Number(vals.cookingLoss || 0),
         price: Number(vals.price || 0),
         weightPiece: Number(vals.weightPiece || 0),
         weightPerLiter: Number(vals.weightPerLiter || 1000),
@@ -84,20 +103,10 @@ export default function IngredientPage() {
     }
   }
 
-  async function onQuery(q) {
-    setLoadingList(true);
-    try {
-      const list = await queryIngredients(q);
-      setIngredients(list);
-    } finally {
-      setLoadingList(false);
-    }
-  }
-
   return (
     <div className="page" style={{ padding: "24px 32px" }}>
       <Title level={3} style={{ marginBottom: 12 }}>
-        🧂 {t("Ingredient Management")}
+        {t("Ingredient Management")}
       </Title>
 
       <Divider />
@@ -121,24 +130,14 @@ export default function IngredientPage() {
           }}
         >
           <Form form={form} layout="vertical">
-            <Form.Item
-              label={t("Name")}
-              name="name"
-              rules={[{ required: true }]}
-            >
-              <Input
-                placeholder="e.g., Fried Squid"
-                onChange={(e) => onQuery(e.target.value)}
-              />
+            <Form.Item label={t("Name")} name="name" rules={[{ required: true }]}>
+              <Input placeholder="e.g., Fried Squid" onChange={(e) => onQuery(e.target.value)} />
             </Form.Item>
 
             <Row gutter={12}>
               <Col span={12}>
                 <Form.Item label={t("Supplier")} name="supplier">
-                  <Input
-                    list="suppliers"
-                    placeholder="Select or type supplier"
-                  />
+                  <Input list="suppliers" placeholder="Select or type supplier" />
                 </Form.Item>
                 <datalist id="suppliers">
                   {(options?.suppliers || []).map((s) => (
@@ -190,13 +189,18 @@ export default function IngredientPage() {
                 </Form.Item>
               </Col>
               <Col span={8}>
-                <Form.Item label={t("Price per kg")} name="price">
-                  <InputNumber min={0} step={0.01} style={{ width: "100%" }} />
+                <Form.Item label="Cooking loss (%)" name="cookingLoss">
+                  <InputNumber min={0} max={100} style={{ width: "100%" }} />
                 </Form.Item>
               </Col>
             </Row>
 
             <Row gutter={12}>
+              <Col span={8}>
+                <Form.Item label={t("Price per kg")} name="price">
+                  <InputNumber min={0} step={0.01} style={{ width: "100%" }} />
+                </Form.Item>
+              </Col>
               <Col span={8}>
                 <Form.Item label={t("Weight per piece (g)")} name="weightPiece">
                   <InputNumber min={0} style={{ width: "100%" }} />
@@ -204,32 +208,20 @@ export default function IngredientPage() {
               </Col>
               <Col span={8}>
                 <Form.Item label="Weight per liter (g)" name="weightPerLiter">
-                  <InputNumber
-                    min={0}
-                    defaultValue={1000}
-                    style={{ width: "100%" }}
-                  />
-                </Form.Item>
-              </Col>
-              <Col span={8}>
-                <Form.Item label="Tsp weight (g)" name="tspWeight">
-                  <InputNumber
-                    min={0}
-                    defaultValue={5}
-                    style={{ width: "100%" }}
-                  />
+                  <InputNumber min={0} defaultValue={1000} style={{ width: "100%" }} />
                 </Form.Item>
               </Col>
             </Row>
 
             <Row gutter={12}>
               <Col span={8}>
+                <Form.Item label="Tsp weight (g)" name="tspWeight">
+                  <InputNumber min={0} defaultValue={5} style={{ width: "100%" }} />
+                </Form.Item>
+              </Col>
+              <Col span={8}>
                 <Form.Item label="Tbsp weight (g)" name="tbspWeight">
-                  <InputNumber
-                    min={0}
-                    defaultValue={15}
-                    style={{ width: "100%" }}
-                  />
+                  <InputNumber min={0} defaultValue={15} style={{ width: "100%" }} />
                 </Form.Item>
               </Col>
             </Row>
@@ -322,8 +314,9 @@ export default function IngredientPage() {
                       article: i.article,
                       category: i.category,
                       unit: i.unit,
-                      ingredientLoss: i.ingredientLoss, // ✅ new load
+                      ingredientLoss: i.ingredientLoss,
                       prepLoss: i.prepLoss,
+                      cookingLoss: i.cookingLoss,
                       price: i.price,
                       weightPiece: i.weightPiece,
                       weightPerLiter: i.weightPerLiter,
