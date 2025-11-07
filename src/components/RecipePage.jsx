@@ -108,21 +108,29 @@ export default function RecipePage() {
     const meta = (ingredientsDb || []).find(
       (x) => x.name && x.name.toLowerCase() === (name || "").toLowerCase()
     );
+
     setRecipe((r) => {
       const updated = { ...r };
       updated.ingredients = [...(r.ingredients || [])];
       updated.ingredients[i] = { ...(updated.ingredients[i] || {}), name };
+
       if (meta) {
+        const n = meta.nutrition || {};
         updated.ingredients[i].unit = meta.unit || "g";
         updated.ingredients[i].category = meta.category;
-        updated.ingredients[i].protein = meta.protein || 0;
-        updated.ingredients[i].carbs = meta.carbs || 0;
-        updated.ingredients[i].fat = meta.fat || 0;
-        updated.ingredients[i].kcal = meta.kcal || 0;
+        updated.ingredients[i].ingredientLoss = meta.ingredientLoss || 0;
+        updated.ingredients[i].prepLoss = meta.prepLoss || 0;
+        updated.ingredients[i].cookingLoss = meta.cookingLoss || 0;
+        updated.ingredients[i].protein = n.protein || 0;
+        updated.ingredients[i].carbs = n.carbs || 0;
+        updated.ingredients[i].fat = n.fats || 0;
+        updated.ingredients[i].kcal = n.calories || 0;
       }
+
       return updated;
     });
   }
+
 
   function addStep() {
     setRecipe((r) => ({
@@ -212,10 +220,10 @@ export default function RecipePage() {
         netYieldFraction(i.ingredientLoss, i.prepLoss, i.cookingLoss);
 
       // nutrients
-      const protein = (meta?.protein || 0) * (scaledGrams / 100);
-      const carbs = (meta?.carbs || 0) * (scaledGrams / 100);
-      const fat = (meta?.fat || 0) * (scaledGrams / 100);
-      const kcal = (meta?.kcal || 0) * (scaledGrams / 100);
+      const protein = (meta?.nutrition?.protein || meta?.protein || 0) * (scaledGrams / 100);
+      const carbs = (meta?.nutrition?.carbs || meta?.carbs || 0) * (scaledGrams / 100);
+      const fat = (meta?.nutrition?.fats || meta?.fat || 0) * (scaledGrams / 100);
+      const kcal = (meta?.nutrition?.calories || meta?.kcal || 0) * (scaledGrams / 100);
 
       return {
         ...i,
@@ -251,11 +259,22 @@ export default function RecipePage() {
   // ---------- Printing ----------
   async function onPrint() {
     try {
-      const html = `<html><head><meta charset="utf-8"><title>${recipe.name || ""}</title></head><body>
-      <h1>${recipe.name || ""}</h1>
-      <h3>Ingredients (Scaled)</h3>
-      <ul>
-      ${scaled
+      const html = `
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <title>${recipe.name || "Recipe"}</title>
+        <style>
+          body { font-family: Arial, sans-serif; padding: 20px; }
+          h1 { text-align: center; }
+          ul { line-height: 1.6; }
+        </style>
+      </head>
+      <body>
+        <h1>${recipe.name || ""}</h1>
+        <h3>Ingredients (Scaled)</h3>
+        <ul>
+          ${scaled
           .map(
             (i) =>
               `<li>${Number(i.scaledQty || 0).toFixed(2)} ${i.unit || ""} ${i.name || ""} — Net: ${Number(
@@ -263,23 +282,25 @@ export default function RecipePage() {
               ).toFixed(1)} g</li>`
           )
           .join("")}
-      </ul>
-      <h4>Total Net Weight: ${Number(netWeight || 0).toFixed(1)} g</h4>
-      <h4>Nutrients per 100 g</h4>
-      <p>Protein: ${totals.protein} g, Carbs: ${totals.carbs} g, Fat: ${totals.fat} g, Kcal: ${totals.kcal}</p>
-      </body></html>`;
+        </ul>
+        <h4>Total Net Weight: ${Number(netWeight || 0).toFixed(1)} g</h4>
+        <h4>Nutrients per 100 g</h4>
+        <p>Protein: ${totals.protein} g, Carbs: ${totals.carbs} g, Fat: ${totals.fat} g, Kcal: ${totals.kcal}</p>
+      </body>
+      </html>
+    `;
 
-      const w = window.open("", "_blank", "noopener,noreferrer");
-      if (!w) {
-        message.warning("Popup blocked — falling back to PDF save");
-        const res = await (window.api && window.api.printToPDF ? window.api.printToPDF(html) : null);
-        if (res && res.path) message.success("PDF saved at " + res.path);
-        return;
+      const w = window.open("", "_blank");
+      if (w) {
+        w.document.write(html);
+        w.document.close();
+        w.focus();
+        w.print();
+      } else {
+        await printToPDF(html);
       }
-      w.document.write(html);
-      w.document.close();
-      w.focus();
-      setTimeout(() => w.print(), 250);
+
+      message.success("Print ready");
     } catch (err) {
       message.error("Print failed: " + (err.message || ""));
     }

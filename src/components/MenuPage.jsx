@@ -172,11 +172,14 @@ export default function MenuPage() {
     }
 
     const items = keys.flatMap((k) => grid[k] || []);
-    if (items.length === 0) return message.info("No items found for this selection");
+    if (items.length === 0) return message.info("No recipes found for this selection");
 
+    // Fetch all recipe details with ingredients
+    const recipeMap = {};
+    for (const r of recipes) recipeMap[r.name] = r;
+
+    // Get selected profile
     const prof = profiles.find((p) => p.name === selectedProfile);
-    const ageGroups = options?.ageGroups || [];
-
     const counts = {};
     if (prof?.table) {
       for (const d of Object.keys(prof.table)) {
@@ -188,20 +191,44 @@ export default function MenuPage() {
       }
     }
 
-    // Weight calculation by standard portions
+    const ageGroups = options?.ageGroups || [];
     const weights = {};
-    for (const recipe of items) {
-      const cat = "General"; // Simplified; would map per recipe category
-      for (const a of ageGroups) {
-        const grams = getStandardPortion(cat, a);
-        const totalPeople = counts[a] || 0;
-        weights[recipe] = (weights[recipe] || 0) + grams * totalPeople;
+
+    // --- NEW: Actual ingredient-based aggregation ---
+    for (const recipeName of items) {
+      const recipe = recipeMap[recipeName];
+      if (!recipe || !recipe.ingredients) continue;
+
+      for (const ing of recipe.ingredients) {
+        const key = ing.name || "Unnamed";
+        const baseQty = Number(ing.qty || 0);
+        const unit = ing.unit || "g";
+
+        // Convert to grams
+        let grams = baseQty;
+        if (unit === "kg") grams = baseQty * 1000;
+        if (unit === "l") grams = baseQty * (ing.weightPerLiter || 1000);
+
+        // Apply simple portion multiplier based on total people
+        let multiplier = 1;
+        for (const ag of ageGroups) {
+          multiplier += counts[ag] ? counts[ag] / 10 : 0;
+        }
+
+        weights[key] = (weights[key] || 0) + grams * multiplier;
       }
     }
 
+    if (Object.keys(weights).length === 0)
+      return message.info("No ingredient data found for these recipes");
+
     const txt = Object.entries(weights)
-      .map(([name, weight]) => `• ${name} — ${weight > 0 ? weight.toFixed(1) + " g" : "No data"}`)
+      .map(
+        ([name, weight]) =>
+          `• ${name} — ${weight > 0 ? weight.toFixed(1) + " g" : "No data"}`
+      )
       .join("<br>");
+
     const html = `<h1>Shopping List (${scope})</h1><p>${txt}</p>`;
 
     const w = window.open("", "_blank");
