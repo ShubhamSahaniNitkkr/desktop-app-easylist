@@ -1,3 +1,4 @@
+// src/components/OptionsPage.jsx
 import React, { useEffect, useState } from "react";
 import {
   Input,
@@ -6,10 +7,10 @@ import {
   Card,
   message,
   InputNumber,
-  Divider,
   Typography,
   Space,
   Collapse,
+  Modal,
 } from "antd";
 import { getAll, update } from "../utils/ipc";
 
@@ -29,32 +30,55 @@ export default function OptionsPage() {
   const [sqlInput, setSqlInput] = useState("");
   const [sqlResponse, setSqlResponse] = useState("");
   const [days] = useState([
-    "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"
+    "Monday",
+    "Tuesday",
+    "Wednesday",
+    "Thursday",
+    "Friday",
+    "Saturday",
+    "Sunday",
   ]);
   const [meals] = useState(["Breakfast", "Lunch", "Snack", "Dinner"]);
+  const [newAgeGroup, setNewAgeGroup] = useState("");
 
   useEffect(() => {
     (async () => {
-      const all = await getAll();
-      const opts = all.options || {};
-      if (!opts.standardPortions) opts.standardPortions = [];
-      if (!opts.ageGroups) opts.ageGroups = [];
-      setOptions(opts);
-      setProfiles(opts.profiles || []);
+      try {
+        const all = await getAll();
+        const opts = all.options || {};
+        // ensure arrays exist
+        if (!opts.standardPortions) opts.standardPortions = [];
+        if (!opts.ageGroups) opts.ageGroups = [];
+        if (!opts.languages) opts.languages = ["en"];
+        if (!opts.units) opts.units = ["g", "kg"];
+        if (!opts.categories) opts.categories = [];
+        if (!opts.allergens) opts.allergens = [];
+        if (!opts.suppliers) opts.suppliers = [];
+        if (!opts.profiles) opts.profiles = [];
+        setOptions(opts);
+        setProfiles(opts.profiles || []);
+      } catch (e) {
+        message.error("Failed to load options: " + (e.message || e));
+      }
     })();
   }, []);
 
+  // Centralized update helper that sets state and persists to backend
   async function updateOptions(updated) {
-    setOptions(updated);
-    await update("options", null, updated);
+    try {
+      setOptions(updated);
+      await update("options", null, updated);
+    } catch (e) {
+      message.error("Save failed: " + (e.message || e));
+    }
   }
 
   function addItem(type, value) {
-    if (!value.trim()) return message.error("Value required");
-    if (options[type]?.includes(value)) return message.warning("Already exists");
-    const newArr = [...(options[type] || []), value];
+    if (!value || !value.trim()) return message.error("Value required");
+    if ((options[type] || []).includes(value.trim()))
+      return message.warning("Already exists");
+    const newArr = [...(options[type] || []), value.trim()];
     const updated = { ...options, [type]: newArr };
-    setOptions(updated);
     updateOptions(updated);
     message.success(`${type} added`);
   }
@@ -62,26 +86,35 @@ export default function OptionsPage() {
   function removeItem(type, value) {
     const filtered = (options[type] || []).filter((x) => x !== value);
     const updated = { ...options, [type]: filtered };
-    setOptions(updated);
     updateOptions(updated);
     message.info(`${value} removed`);
   }
 
   // ---------- AGE GROUPS ----------
-  function addAgeGroup() {
-    const name = prompt("Enter age group label (e.g., 3–5 years):");
-    if (!name) return;
-    if ((options.ageGroups || []).includes(name))
+  async function addAgeGroup() {
+    const name = newAgeGroup.trim();
+    if (!name) return message.error("Please enter an age group name");
+    if ((options.ageGroups || []).includes(name)) {
       return message.warning("This age group already exists");
+    }
 
     const updated = {
       ...options,
       ageGroups: [...(options.ageGroups || []), name],
     };
-    setOptions(updated);
-    updateOptions(updated);
-    message.success(`Age group '${name}' added`);
+
+    try {
+      await update("options", null, updated);
+      setOptions(updated);
+      setNewAgeGroup("");
+      message.success(`Age group '${name}' added successfully`);
+    } catch (err) {
+      console.error(err);
+      message.error("Failed to save age group");
+    }
   }
+
+
 
   function removeAgeGroup(label) {
     const updated = {
@@ -91,12 +124,11 @@ export default function OptionsPage() {
         (sp) => sp.ageGroup !== label
       ),
     };
-    setOptions(updated);
     updateOptions(updated);
   }
 
   // ---------- PROFILES ----------
-  function addProfile() {
+  async function addProfile() {
     if (!newProfileName.trim()) return message.error("Profile name required");
     if (profiles.find((p) => p.name === newProfileName))
       return message.warning("Profile already exists");
@@ -110,7 +142,7 @@ export default function OptionsPage() {
     const updatedProfiles = [...profiles, newP];
     setProfiles(updatedProfiles);
     const updatedOptions = { ...options, profiles: updatedProfiles };
-    updateOptions(updatedOptions);
+    await updateOptions(updatedOptions);
     setNewProfileName("");
     message.success("Profile added");
   }
@@ -119,7 +151,7 @@ export default function OptionsPage() {
     setActiveProfile(name);
   }
 
-  function updateProfileCell(profileName, day, meal, label, value) {
+  async function updateProfileCell(profileName, day, meal, label, value) {
     const updatedProfiles = profiles.map((p) => {
       if (p.name !== profileName) return p;
       const table = p.table || {};
@@ -133,11 +165,11 @@ export default function OptionsPage() {
 
     setProfiles(updatedProfiles);
     const updatedOptions = { ...options, profiles: updatedProfiles };
-    updateOptions(updatedOptions);
+    await updateOptions(updatedOptions);
   }
 
   // ---------- STANDARD PORTIONS ----------
-  function updatePortion(ageGroup, category, value) {
+  async function updatePortion(ageGroup, category, value) {
     const list = [...(options.standardPortions || [])];
     const idx = list.findIndex(
       (p) => p.ageGroup === ageGroup && p.category === category
@@ -145,8 +177,7 @@ export default function OptionsPage() {
     if (idx >= 0) list[idx].grams = value;
     else list.push({ ageGroup, category, grams: value });
     const updated = { ...options, standardPortions: list };
-    setOptions(updated);
-    updateOptions(updated);
+    await updateOptions(updated);
   }
 
   function renderPortionTable() {
@@ -241,6 +272,16 @@ export default function OptionsPage() {
     }
   }
 
+  // manual save button (saves current options snapshot)
+  async function saveAll() {
+    try {
+      await update("options", null, options);
+      message.success("All changes saved successfully");
+    } catch (e) {
+      message.error("Save failed: " + (e.message || e));
+    }
+  }
+
   if (!options) return <div style={{ padding: 20 }}>Loading configuration...</div>;
 
   return (
@@ -317,13 +358,22 @@ export default function OptionsPage() {
         </Card>
 
         {/* ---------- AGE GROUPS ---------- */}
-        <Card
-          title="Age Groups"
-          extra={<Button onClick={addAgeGroup}>+ Add Age Group</Button>}
-        >
+        <Card title="Age Groups">
+          <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+            <Input
+              placeholder="Add new age group (e.g., 3–5 years)"
+              value={newAgeGroup}
+              onChange={(e) => setNewAgeGroup(e.target.value)}
+            />
+            <Button type="primary" onClick={addAgeGroup}>
+              Add
+            </Button>
+          </div>
+
           {(options.ageGroups || []).length === 0 && (
             <Text type="secondary">No age groups defined yet.</Text>
           )}
+
           {(options.ageGroups || []).map((a) => (
             <div
               key={a}
@@ -407,11 +457,7 @@ export default function OptionsPage() {
               style={{ marginTop: 10 }}
               placeholder="Paste SQL here..."
             />
-            <Button
-              onClick={injectSqlData}
-              type="primary"
-              style={{ marginTop: 8 }}
-            >
+            <Button onClick={injectSqlData} type="primary" style={{ marginTop: 8 }}>
               Inject SQL
             </Button>
             {sqlResponse && (
@@ -430,6 +476,13 @@ export default function OptionsPage() {
             )}
           </Panel>
         </Collapse>
+
+        {/* ---------- SAVE BUTTON ---------- */}
+        <div style={{ textAlign: "right", marginTop: 20 }}>
+          <Button type="primary" size="large" onClick={saveAll}>
+            Save Changes
+          </Button>
+        </div>
       </Space>
     </div>
   );
@@ -517,9 +570,7 @@ function ProfileGrid({ profile, options, updateProfileCell, days, meals, activeP
                     key={lbl}
                     min={0}
                     value={value}
-                    onChange={(v) =>
-                      updateProfileCell(activeProfile, d, m, lbl, v)
-                    }
+                    onChange={(v) => updateProfileCell(activeProfile, d, m, lbl, v)}
                     style={{ width: 80 }}
                   />
                 );
