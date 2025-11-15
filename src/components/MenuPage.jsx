@@ -200,7 +200,10 @@ export default function MenuPage() {
       if (!recipe || !recipe.ingredients) continue;
 
       for (const ing of recipe.ingredients) {
-        const key = ing.name || "Unnamed";
+        const supplier = ing.supplier || "Unknown Supplier";
+        const itemNumber = ing.itemNumber || "N/A";
+        const key = `${ing.name}  (Supplier: ${supplier}, Item#: ${itemNumber})`;
+
         const baseQty = Number(ing.qty || 0);
         const unit = ing.unit || "g";
 
@@ -223,10 +226,7 @@ export default function MenuPage() {
       return message.info("No ingredient data found for these recipes");
 
     const txt = Object.entries(weights)
-      .map(
-        ([name, weight]) =>
-          `• ${name} — ${weight > 0 ? weight.toFixed(1) + " g" : "No data"}`
-      )
+      .map(([key, weight]) => `• ${key} — ${weight.toFixed(1)} g`)
       .join("<br>");
 
     const html = `<h1>Shopping List (${scope})</h1><p>${txt}</p>`;

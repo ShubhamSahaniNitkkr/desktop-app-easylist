@@ -116,16 +116,26 @@ export default function RecipePage() {
 
       if (meta) {
         const n = meta.nutrition || {};
+
         updated.ingredients[i].unit = meta.unit || "g";
         updated.ingredients[i].category = meta.category;
+
+        // Losses
         updated.ingredients[i].ingredientLoss = meta.ingredientLoss || 0;
         updated.ingredients[i].prepLoss = meta.prepLoss || 0;
         updated.ingredients[i].cookingLoss = meta.cookingLoss || 0;
+
+        // Nutrition
         updated.ingredients[i].protein = n.protein || 0;
         updated.ingredients[i].carbs = n.carbs || 0;
         updated.ingredients[i].fat = n.fats || 0;
         updated.ingredients[i].kcal = n.calories || 0;
+
+        // ✅ ADD THESE TWO LINES
+        updated.ingredients[i].supplier = meta.supplier || "";
+        updated.ingredients[i].itemNumber = meta.article || "";
       }
+
 
       return updated;
     });
@@ -156,14 +166,49 @@ export default function RecipePage() {
       const copy = JSON.parse(JSON.stringify(recipe));
       if (!copy.rating && copy.rating !== 0) copy.rating = 100;
 
+      // 1️⃣ Save recipe normally
       await add("recipes", copy);
+
+      // 2️⃣ If recipe should be used as ingredient → save into ingredients table
+      if (copy.asIngredient) {
+        const ingredientData = {
+          name: copy.name,
+          supplier: "Recipe",
+          article: "",
+          category: copy.category || "prepared",
+          unit: "g",
+          ingredientLoss: 0,
+          prepLoss: 0,
+          cookingLoss: 0,
+          price: 0,
+          weightPiece: netWeight || 0,
+          weightPerLiter: null,
+          tspWeight: null,
+          tbspWeight: null,
+          allergens: [],
+          nutrition: {
+            protein: Number(totals.protein) || 0,
+            carbs: Number(totals.carbs) || 0,
+            fats: Number(totals.fat) || 0,
+            calories: Number(totals.kcal) || 0,
+          },
+        };
+
+        // Save or update ingredient
+        await add("ingredients", ingredientData);
+      }
+
       message.success("Recipe saved successfully");
+
       const all = await getAll();
       setRecipes(all.recipes || []);
+      setIngredientsDb(all.ingredients || []);
+
     } catch (err) {
       message.error(err.message || "Save failed");
     }
   }
+
 
   async function pickImg() {
     try {
@@ -199,36 +244,53 @@ export default function RecipePage() {
     let baseNet = 0;
     const metaCache = {};
 
+    // 1️⃣ First pass: compute base net weight
     for (const i of ingredients) {
       const nameKey = (i.name || "").toLowerCase();
       const meta =
         metaCache[nameKey] ||
         ingredientsDb.find((m) => m.name && m.name.toLowerCase() === nameKey);
+
       metaCache[nameKey] = meta;
-      const grams = gramsFromUnit(i.qty || 0, i.unit, meta);
-      const net = grams * netYieldFraction(i.ingredientLoss, i.prepLoss, i.cookingLoss);
+
+      const gramsRaw = gramsFromUnit(i.qty || 0, i.unit, meta);
+      const net = gramsRaw * netYieldFraction(i.ingredientLoss, i.prepLoss, i.cookingLoss);
       baseNet += net;
     }
 
+    // 2️⃣ Scaling ratio (target weight)
     const ratio = targetWeight && baseNet > 0 ? Number(targetWeight) / baseNet : 1;
 
+    // 3️⃣ Second pass: return all scaled values
     return ingredients.map((i) => {
       const meta = metaCache[(i.name || "").toLowerCase()];
       const scaledQty = (Number(i.qty) || 0) * ratio;
-      const scaledGrams =
-        gramsFromUnit(scaledQty, i.unit, meta) *
-        netYieldFraction(i.ingredientLoss, i.prepLoss, i.cookingLoss);
 
-      // nutrients
-      const protein = (meta?.nutrition?.protein || meta?.protein || 0) * (scaledGrams / 100);
-      const carbs = (meta?.nutrition?.carbs || meta?.carbs || 0) * (scaledGrams / 100);
-      const fat = (meta?.nutrition?.fats || meta?.fat || 0) * (scaledGrams / 100);
-      const kcal = (meta?.nutrition?.calories || meta?.kcal || 0) * (scaledGrams / 100);
+      // RAW weight before losses
+      const rawGrams = gramsFromUnit(scaledQty, i.unit, meta);
+
+      // Losses
+      const yieldFactor = netYieldFraction(i.ingredientLoss, i.prepLoss, i.cookingLoss);
+
+      // FINAL usable grams
+      const netGrams = rawGrams * yieldFactor;
+
+      // Nutrition per 100g RAW ingredient
+      const rawProtein = meta?.nutrition?.protein || meta?.protein || 0;
+      const rawCarbs = meta?.nutrition?.carbs || meta?.carbs || 0;
+      const rawFat = meta?.nutrition?.fats || meta?.fat || 0;
+      const rawKcal = meta?.nutrition?.calories || meta?.kcal || 0;
+
+      // 4️⃣ Nutrients AFTER losses (correct)
+      const protein = rawProtein * (netGrams / 100);
+      const carbs = rawCarbs * (netGrams / 100);
+      const fat = rawFat * (netGrams / 100);
+      const kcal = rawKcal * (netGrams / 100);
 
       return {
         ...i,
         scaledQty,
-        scaledInGrams: scaledGrams || 0,
+        scaledInGrams: netGrams,
         protein,
         carbs,
         fat,
@@ -236,6 +298,7 @@ export default function RecipePage() {
       };
     });
   }, [recipe, targetWeight, ingredientsDb, options]);
+
 
   const netWeight = useMemo(
     () => scaled.reduce((a, b) => a + (b.scaledInGrams || 0), 0),

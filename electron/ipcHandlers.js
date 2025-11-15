@@ -1,5 +1,30 @@
-const { ipcMain } = require("electron");
+const { ipcMain,dialog } = require("electron");
 const { db } = require("./db");
+const fs = require("fs");
+
+ipcMain.handle("file-pickImage", async () => {
+    const result = await dialog.showOpenDialog({
+        title: "Pick Image",
+        properties: ["openFile"],
+        filters: [
+            { name: "Images", extensions: ["png", "jpg", "jpeg", "webp"] }
+        ]
+    });
+
+    if (result.canceled) {
+        return { canceled: true };
+    }
+
+    const filePath = result.filePaths[0];
+    const ext = filePath.split(".").pop().toLowerCase();
+    const base64 = fs.readFileSync(filePath, { encoding: "base64" });
+
+    return {
+        canceled: false,
+        data: `data:image/${ext};base64,${base64}`
+    };
+});
+
 
 function registerIpcHandlers() {
     const runAll = (sql, params = []) =>
