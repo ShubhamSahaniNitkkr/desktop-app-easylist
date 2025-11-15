@@ -208,17 +208,27 @@ export default function MenuPage() {
         const unit = ing.unit || "g";
 
         // Convert to grams
-        let grams = baseQty;
-        if (unit === "kg") grams = baseQty * 1000;
-        if (unit === "l") grams = baseQty * (ing.weightPerLiter || 1000);
+        let rawGrams = baseQty;
+        if (unit === "kg") rawGrams = baseQty * 1000;
+        if (unit === "l") rawGrams = baseQty * (ing.weightPerLiter || 1000);
 
-        // Apply simple portion multiplier based on total people
+        // 2️⃣ Loss factors
+        const IL = 1 - (Number(ing.ingredientLoss) || 0) / 100;
+        const PL = 1 - (Number(ing.prepLoss) || 0) / 100;
+        const CL = 1 - (Number(ing.cookingLoss) || 0) / 100;
+
+        const yieldFactor = IL * PL * CL;
+
+        // 3️⃣ Convert required NET grams from recipe → RAW grams needed for shopping
+        const requiredRaw = rawGrams / yieldFactor;
+
+        // 4️⃣ Apply people multiplier
         let multiplier = 1;
         for (const ag of ageGroups) {
           multiplier += counts[ag] ? counts[ag] / 10 : 0;
         }
 
-        weights[key] = (weights[key] || 0) + grams * multiplier;
+        weights[key] = (weights[key] || 0) + requiredRaw * multiplier;
       }
     }
 
@@ -229,7 +239,43 @@ export default function MenuPage() {
       .map(([key, weight]) => `• ${key} — ${weight.toFixed(1)} g`)
       .join("<br>");
 
-    const html = `<h1>Shopping List (${scope})</h1><p>${txt}</p>`;
+    const html = `
+<html>
+<head>
+  <style>
+    @page {
+      size: A4; 
+      margin: 10mm;
+    }
+    body {
+      font-family: Arial;
+      zoom: 0.78; /* auto-fit to one page */
+      -webkit-print-color-adjust: exact;
+    }
+    h1 {
+      font-size: 22px;
+      margin-bottom: 10px;
+    }
+    .item {
+      margin-bottom: 6px;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Shopping List (${scope})</h1>
+
+  ${Object.entries(weights)
+        .map(
+          ([key, weight]) =>
+            `<div class="item">• <b>${key}</b> — ${weight.toFixed(1)} g</div>`
+        )
+        .join("")}
+
+</body>
+</html>
+`;
+
 
     const w = window.open("", "_blank");
     if (w) {
@@ -244,27 +290,73 @@ export default function MenuPage() {
 
   // -------- PRINT MENU --------
   function printMenu() {
-    let html = `<h1>${activeMenu} - ${weekLabel()}</h1>`;
+    let content = `
+    <html>
+    <head>
+      <style>
+        @page {
+          size: A4;
+          margin: 10mm;
+        }
+
+        body {
+          font-family: Arial, sans-serif;
+          zoom: 0.78; /* force-fit to single page */
+          -webkit-print-color-adjust: exact;
+        }
+
+        h1 {
+          text-align: center;
+          margin-bottom: 20px;
+        }
+
+        h3 {
+          margin-top: 16px;
+          margin-bottom: 6px;
+        }
+
+        ul {
+          margin: 0;
+          padding-left: 18px;
+        }
+
+        li {
+          margin-bottom: 4px;
+        }
+      </style>
+    </head>
+    <body>
+      <h1>${activeMenu} – ${weekLabel()}</h1>
+  `;
+
     days.forEach((d) => {
-      html += `<h3>${d}</h3><ul>`;
+      content += `<h3>${d}</h3><ul>`;
       meals.forEach((m) => {
         const key = `${activeMenu}__W${weekOffset}__${d}__${m}`;
         const items = grid[key] || [];
-        html += `<li><b>${m}:</b> ${items.join(", ") || "-"}</li>`;
+        content += `<li><b>${m}:</b> ${items.join(", ") || "-"}</li>`;
       });
-      html += `</ul>`;
+      content += `</ul>`;
     });
+
+    content += `
+    </body>
+    </html>
+  `;
 
     const w = window.open("", "_blank");
     if (w) {
-      w.document.write(html);
+      w.document.write(content);
       w.document.close();
+      w.focus();
       w.print();
     } else {
-      printToPDF(html);
+      printToPDF(content);
     }
+
     message.success("Print ready");
   }
+
 
   return (
     <div className="page">

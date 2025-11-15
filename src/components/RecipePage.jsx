@@ -329,26 +329,53 @@ export default function RecipePage() {
         <title>${recipe.name || "Recipe"}</title>
         <style>
           body { font-family: Arial, sans-serif; padding: 20px; }
-          h1 { text-align: center; }
-          ul { line-height: 1.6; }
+          h1 { text-align: center; margin-bottom: 10px; }
+          h2 { margin-top: 30px; }
+          ul { line-height: 1.6; padding-left: 20px; }
+          .step { margin-bottom: 10px; }
         </style>
       </head>
       <body>
+
+        <!-- Title -->
         <h1>${recipe.name || ""}</h1>
-        <h3>Ingredients (Scaled)</h3>
+
+        <!-- Ingredients -->
+        <h2>Ingredients</h2>
         <ul>
           ${scaled
           .map(
             (i) =>
-              `<li>${Number(i.scaledQty || 0).toFixed(2)} ${i.unit || ""} ${i.name || ""} — Net: ${Number(
-                i.scaledInGrams || 0
-              ).toFixed(1)} g</li>`
+              `<li>${Number(i.scaledQty || 0).toFixed(2)} ${i.unit || ""} ${i.name || ""}</li>`
           )
           .join("")}
         </ul>
-        <h4>Total Net Weight: ${Number(netWeight || 0).toFixed(1)} g</h4>
-        <h4>Nutrients per 100 g</h4>
-        <p>Protein: ${totals.protein} g, Carbs: ${totals.carbs} g, Fat: ${totals.fat} g, Kcal: ${totals.kcal}</p>
+
+        <!-- Steps -->
+        <h2>Preparation Steps</h2>
+        <div>
+          ${(recipe.steps || [])
+          .map(
+            (s, index) =>
+              `<div class="step">
+                    <b>Step ${index + 1}:</b> ${s.text || ""}
+                    ${s.time ? `<br><i>Time:</i> ${s.time} min` : ""}
+                    ${s.temperature ? `<br><i>Temp:</i> ${s.temperature}°C` : ""}
+                  </div>`
+          )
+          .join("")
+        }
+        </div>
+
+        <!-- Nutrition Table -->
+        <h2>Nutritional Values (per 100 g)</h2>
+        <p>
+          Protein: ${totals.protein} g<br>
+          Carbs: ${totals.carbs} g<br>
+          Fat: ${totals.fat} g<br>
+          Kcal: ${totals.kcal}
+        </p>
+
       </body>
       </html>
     `;
@@ -368,6 +395,7 @@ export default function RecipePage() {
       message.error("Print failed: " + (err.message || ""));
     }
   }
+
 
   function loadRecipe(r) {
     setRecipe({ ...r });
