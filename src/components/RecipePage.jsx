@@ -352,21 +352,20 @@ export default function RecipePage() {
         </ul>
 
         <!-- Steps -->
+        <!-- Steps -->
         <h2>Preparation Steps</h2>
         <div>
           ${(recipe.steps || [])
           .map(
             (s, index) =>
               `<div class="step">
-                    <b>Step ${index + 1}:</b> ${s.text || ""}
-                    ${s.time ? `<br><i>Time:</i> ${s.time} min` : ""}
-                    ${s.temperature ? `<br><i>Temp:</i> ${s.temperature}°C` : ""}
-                  </div>`
+                  <b>Step ${index + 1}:</b> ${s.text || ""}
+                  ${s.time ? `<br><i>Time:</i> ${s.time} min` : ""}
+                  ${s.temperature ? `<br><i>Temp:</i> ${s.temperature}°C` : ""}
+                </div>`
           )
-          .join("")
-        }
+          .join("")}
         </div>
-
         <!-- Nutrition Table -->
         <h2>Nutritional Values (per 100 g)</h2>
         <p>
@@ -444,6 +443,16 @@ export default function RecipePage() {
                 <Input
                   value={recipe.youtube}
                   onChange={(e) => setRecipe((r) => ({ ...r, youtube: e.target.value }))}
+                />
+              </Col>
+              <Col span={8}>
+                <Text strong>Rating (%)</Text>
+                <InputNumber
+                  min={0}
+                  max={100}
+                  value={recipe.rating}
+                  onChange={(v) => setRecipe((r) => ({ ...r, rating: v }))}
+                  style={{ width: "100%" }}
                 />
               </Col>
             </Row>
@@ -548,34 +557,44 @@ export default function RecipePage() {
             <Title level={5}>Preparation Steps</Title>
 
             {(recipe.steps || []).map((s, i) => (
-              <Row key={i} gutter={8} style={{ marginBottom: 8 }}>
+              <Row key={i} gutter={8} style={{ marginBottom: 12 }}>
+
+                {/* Description */}
                 <Col span={16}>
+                  <Text strong>Description</Text>
                   <Input.TextArea
                     rows={3}
                     value={s.text}
                     onChange={(e) => updateStep(i, "text", e.target.value)}
+                    style={{ marginTop: 4 }}
                   />
                 </Col>
+
+                {/* Time */}
                 <Col span={4}>
+                  <Text strong>Time (min)</Text>
                   <InputNumber
                     value={s.time}
                     onChange={(v) => updateStep(i, "time", v)}
                     min={0}
-                    style={{ width: "100%" }}
-                    placeholder="min"
+                    style={{ width: "100%", marginTop: 4 }}
                   />
                 </Col>
+
+                {/* Temperature */}
                 <Col span={4}>
+                  <Text strong>Temp (°C)</Text>
                   <InputNumber
                     value={s.temperature}
                     onChange={(v) => updateStep(i, "temperature", v)}
                     min={0}
-                    style={{ width: "100%" }}
-                    placeholder="°C"
+                    style={{ width: "100%", marginTop: 4 }}
                   />
                 </Col>
+
               </Row>
             ))}
+
 
             <Button onClick={addStep}>Add Step</Button>
 
