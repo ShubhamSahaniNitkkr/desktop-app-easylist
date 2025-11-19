@@ -192,6 +192,7 @@ export default function RecipePage() {
             fats: Number(totals.fat) || 0,
             calories: Number(totals.kcal) || 0,
           },
+          _fromRecipeIngredients: copy.ingredients || [],
         };
 
         // Save or update ingredient
@@ -397,7 +398,10 @@ export default function RecipePage() {
 
 
   function loadRecipe(r) {
-    setRecipe({ ...r });
+    setRecipe({
+      ...r,
+      ...JSON.parse(r.data || "{}")
+    });
     setTargetWeight(null);
   }
 
@@ -662,15 +666,33 @@ export default function RecipePage() {
               dataSource={[...(filteredRecipes || [])].reverse()}
               renderItem={(item) => (
                 <List.Item
-                  onClick={() => loadRecipe(item)}
                   style={{
                     cursor: "pointer",
+                    display: "flex",
                     justifyContent: "space-between",
+                    alignItems: "center",
                   }}
                 >
-                  <span>{item.name}</span>
-                  <Button size="small">Load</Button>
+                  <span onClick={() => loadRecipe(item)}>{item.name}</span>
+
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <Button size="small" onClick={() => loadRecipe(item)}>Load</Button>
+
+                    <Button
+                      danger
+                      size="small"
+                      onClick={async () => {
+                        await window.api.remove("recipes", item.name);
+                        const all = await window.api.getAll();
+                        setRecipes(all.recipes || []);
+                        message.success("Recipe deleted");
+                      }}
+                    >
+                      Delete
+                    </Button>
+                  </div>
                 </List.Item>
+
               )}
             />
           </Card>

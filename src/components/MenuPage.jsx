@@ -199,9 +199,15 @@ export default function MenuPage() {
       const recipe = recipeMap[recipeName];
       if (!recipe || !recipe.ingredients) continue;
 
+      if (recipe._fromRecipeIngredients) {
+        for (const ing of recipe._fromRecipeIngredients) {
+          items.push(ing.name);
+        }
+      }
+
       for (const ing of recipe.ingredients) {
         const supplier = ing.supplier || "Unknown Supplier";
-        const itemNumber = ing.itemNumber || "N/A";
+        const itemNumber = ing.article || ing.itemNumber || "N/A";
         const key = `${ing.name}  (Supplier: ${supplier}, Item#: ${itemNumber})`;
 
         const baseQty = Number(ing.qty || 0);
@@ -268,7 +274,10 @@ export default function MenuPage() {
   ${Object.entries(weights)
         .map(
           ([key, weight]) =>
-            `<div class="item">• <b>${key}</b> — ${weight.toFixed(1)} g</div>`
+            `<div class="item">• <b>${key}</b> — ${weight >= 1000
+              ? (weight / 1000).toFixed(2) + " kg"
+              : weight.toFixed(1) + " g"
+            }</div>`
         )
         .join("")}
 
@@ -530,9 +539,19 @@ export default function MenuPage() {
               renderItem={(item) => (
                 <List.Item
                   actions={[
-                    <Button size="small" onClick={() => loadMenu(item)}>
-                      Load
-                    </Button>,
+                    <Button size="small" onClick={() => loadMenu(item)}>Load</Button>,
+
+                    <Button
+                      danger
+                      size="small"
+                      onClick={async () => {
+                        await window.api.remove("menus", item.name);
+                        setSavedMenus(prev => prev.filter(m => m.name !== item.name));
+                        message.success("Menu deleted");
+                      }}
+                    >
+                      Delete
+                    </Button>
                   ]}
                 >
                   <span>

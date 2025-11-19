@@ -1,4 +1,4 @@
-const { ipcMain,dialog } = require("electron");
+const { ipcMain, dialog } = require("electron");
 const { db } = require("./db");
 const fs = require("fs");
 
@@ -78,6 +78,12 @@ function registerIpcHandlers() {
         result.options = JSON.parse(opt.data || "{}");
         return result;
     });
+
+    ipcMain.handle("db-get", async (event, key) => {
+        const row = await runGet(`SELECT data FROM ${key} WHERE id=1`);
+        return row ? JSON.parse(row.data || "{}") : null;
+    });
+
 
     // ---------- ADD ----------
     ipcMain.handle("db-add", async (event, table, data) => {

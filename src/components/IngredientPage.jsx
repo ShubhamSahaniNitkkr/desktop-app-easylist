@@ -140,6 +140,7 @@ export default function IngredientPage() {
                   <Input list="suppliers" placeholder="Select or type supplier" />
                 </Form.Item>
                 <datalist id="suppliers">
+                  <option value="" disabled />
                   {(options?.suppliers || []).map((s) => (
                     <option key={s} value={s} />
                   ))}
@@ -305,35 +306,52 @@ export default function IngredientPage() {
                     )}
                   </div>
                 </div>
-                <Button
-                  size="small"
-                  onClick={() => {
-                    form.setFieldsValue({
-                      name: i.name,
-                      supplier: i.supplier,
-                      article: i.article,
-                      category: i.category,
-                      unit: i.unit,
-                      ingredientLoss: i.ingredientLoss,
-                      prepLoss: i.prepLoss,
-                      cookingLoss: i.cookingLoss,
-                      price: i.price,
-                      weightPiece: i.weightPiece,
-                      weightPerLiter: i.weightPerLiter,
-                      tspWeight: i.tspWeight,
-                      tbspWeight: i.tbspWeight,
-                      allergens: i.allergens || [],
-                      protein: i.nutrition?.protein,
-                      carbs: i.nutrition?.carbs,
-                      fats: i.nutrition?.fats,
-                      calories: i.nutrition?.calories,
-                      fiber: i.nutrition?.fiber,
-                      salt: i.nutrition?.salt,
-                    });
-                  }}
-                >
-                  Load
-                </Button>
+                <div>
+                  <Button
+                    size="small"
+                    onClick={() => {
+                      form.setFieldsValue({
+                        name: i.name,
+                        supplier: i.supplier,
+                        article: i.article,
+                        category: i.category,
+                        unit: i.unit,
+                        ingredientLoss: i.ingredientLoss,
+                        prepLoss: i.prepLoss,
+                        cookingLoss: i.cookingLoss,
+                        price: i.price,
+                        weightPiece: i.weightPiece,
+                        weightPerLiter: i.weightPerLiter,
+                        tspWeight: i.tspWeight,
+                        tbspWeight: i.tbspWeight,
+                        allergens: i.allergens || [],
+                        protein: i.nutrition?.protein,
+                        carbs: i.nutrition?.carbs,
+                        fats: i.nutrition?.fats,
+                        calories: i.nutrition?.calories,
+                        fiber: i.nutrition?.fiber,
+                        salt: i.nutrition?.salt,
+                      });
+                    }}
+                  >
+                    Load
+                  </Button>
+                  &nbsp;
+                  &nbsp;
+                  <Button
+                    danger
+                    size="small"
+                    onClick={async () => {
+                      await window.api.remove("ingredients", i.name);
+                      const re = await window.api.getAll();
+                      setIngredients(re.ingredients || []);
+                      message.success("Ingredient deleted");
+                    }}
+                  >
+                    Delete
+                  </Button>
+
+                </div>
               </div>
             ))}
           </div>
