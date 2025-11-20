@@ -9,6 +9,7 @@ import MenuPage from "./components/MenuPage";
 import OptionsPage from "./components/OptionsPage";
 import { useTranslation } from "react-i18next";
 import { getAll } from "./utils/ipc";
+import HelpPage from "./components/HelpPage";
 
 const { Header, Content } = Layout;
 
@@ -61,6 +62,7 @@ export default function App() {
             <Button onClick={() => setPage("recipe")}>{t("Recipe")}</Button>
             <Button onClick={() => setPage("menu")}>{t("Menu")}</Button>
             <Button onClick={() => setPage("options")}>{t("Options")}</Button>
+            <Button onClick={() => setPage("help")}>{t("Help")}</Button>
           </div>
         </Header>
 
@@ -72,6 +74,7 @@ export default function App() {
           {page === "options" && (
             <OptionsPage refreshOptions={(o) => setOptions(o)} />
           )}
+          {page === "help" && <HelpPage />}
         </Content>
       </Layout>
     </ConfigProvider>

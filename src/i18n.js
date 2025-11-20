@@ -10,7 +10,7 @@ const resources = {
             "Price per kg": "Price per kg", "Weight per piece (g)": "Weight per piece (g)", "Allergen": "Allergen",
             "Save successful": "Saved", "Pick image": "Pick image", "Save": "Save", "New": "New", "Load": "Load",
             "Default Language": "Default Language", "Currency symbol": "Currency symbol", "Categories": "Categories", "Suppliers": "Suppliers",
-            "Apply": "Apply"
+            "Apply": "Apply", "Help": "Help",
         }
     },
     fr: {
@@ -20,7 +20,7 @@ const resources = {
             "Price per kg": "Prix / kg", "Weight per piece (g)": "Poids / pièce (g)", "Allergen": "Allergène",
             "Save successful": "Enregistré", "Pick image": "Choisir une image", "Save": "Enregistrer", "New": "Nouveau", "Load": "Charger",
             "Default Language": "Langue par défaut", "Currency symbol": "Symbole devise", "Categories": "Catégories", "Suppliers": "Fournisseurs",
-            "Apply": "Appliquer"
+            "Apply": "Appliquer", "Help": "Help",
         }
     }
 };

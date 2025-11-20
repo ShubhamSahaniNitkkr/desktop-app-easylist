@@ -55,6 +55,17 @@ export default function OptionsPage() {
         if (!opts.allergens) opts.allergens = [];
         if (!opts.suppliers) opts.suppliers = [];
         if (!opts.profiles) opts.profiles = [];
+        if (!opts.unitConversion) {
+          opts.unitConversion = {
+            g: 1,
+            kg: 1000,
+            mg: 0.001,
+            l: 1000,
+            ml: 1,
+            tsp: 5,
+            tbsp: 15
+          };
+        }
         setOptions(opts);
         setProfiles(opts.profiles || []);
       } catch (e) {
@@ -252,10 +263,36 @@ export default function OptionsPage() {
 
       const lower = sqlInput.toLowerCase();
       let resp = "";
-      if (lower.includes("insert into ingredients")) {
-        resp = "SQL parsed and injected into Ingredients table (simulated).";
-        message.success("SQL parsed — ingredients injected");
-      } else if (lower.includes("insert into recipes")) {
+      if (lower.startsWith("insert into ingredients")) {
+        try {
+          const colMatch = sqlInput.match(/\((.*?)\)/);
+          const valMatch = sqlInput.match(/values\s*\((.*?)\)/i);
+
+          if (!colMatch || !valMatch) throw new Error("Invalid SQL");
+
+          const columns = colMatch[1].split(",").map((x) => x.trim());
+          const values = valMatch[1]
+            .split(",")
+            .map((x) => x.trim().replace(/^'|'$/g, ""));
+
+          const obj = {};
+          columns.forEach((c, i) => (obj[c] = values[i] || null));
+
+          // Auto-parse JSON fields
+          if (obj.allergens) obj.allergens = JSON.parse(obj.allergens);
+          if (obj.nutrition) obj.nutrition = JSON.parse(obj.nutrition);
+
+          await window.api.add("ingredients", obj);
+
+          resp = "✔ Ingredient inserted successfully";
+          message.success("SQL ingredient inserted");
+
+        } catch (err) {
+          resp = "❌ SQL parse failed";
+          message.error("Invalid SQL insert format");
+        }
+      }
+      else if (lower.includes("insert into recipes")) {
         resp = "SQL parsed and injected into Recipes table (simulated).";
         message.success("SQL parsed — recipes injected");
       } else {

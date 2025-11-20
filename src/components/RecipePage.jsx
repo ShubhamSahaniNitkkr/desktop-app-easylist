@@ -225,11 +225,15 @@ export default function RecipePage() {
 
   // ---------- Nutrient & Weight Calculations ----------
   function gramsFromUnit(qty, unit, meta) {
-    if (!qty) return 0;
-    if (unit === "kg") return qty * 1000;
+    const conv = options?.unitConversion || {};
+    if (conv[unit] != null) return qty * conv[unit];
+
+    // fallback for old recipes
     if (unit === "l") return qty * (meta?.weightPerLiter || 1000);
+
     return qty;
   }
+
 
   function netYieldFraction(ingLoss, prepLoss, cookLoss) {
     const f1 = 1 - (Number(ingLoss || 0) / 100);
@@ -261,6 +265,8 @@ export default function RecipePage() {
 
     // 2️⃣ Scaling ratio (target weight)
     const ratio = targetWeight && baseNet > 0 ? Number(targetWeight) / baseNet : 1;
+    const ratingFactor = Number(recipe.rating || 100) / 100;
+
 
     // 3️⃣ Second pass: return all scaled values
     return ingredients.map((i) => {
@@ -268,7 +274,7 @@ export default function RecipePage() {
       const scaledQty = (Number(i.qty) || 0) * ratio;
 
       // RAW weight before losses
-      const rawGrams = gramsFromUnit(scaledQty, i.unit, meta);
+      const rawGrams = gramsFromUnit(scaledQty, i.unit, meta) * ratingFactor;
 
       // Losses
       const yieldFactor = netYieldFraction(i.ingredientLoss, i.prepLoss, i.cookingLoss);
@@ -453,7 +459,6 @@ export default function RecipePage() {
                 <Text strong>Rating (%)</Text>
                 <InputNumber
                   min={0}
-                  max={100}
                   value={recipe.rating}
                   onChange={(v) => setRecipe((r) => ({ ...r, rating: v }))}
                   style={{ width: "100%" }}
