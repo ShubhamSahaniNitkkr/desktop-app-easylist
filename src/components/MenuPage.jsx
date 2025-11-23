@@ -233,8 +233,11 @@ export default function MenuPage() {
         for (const ag of ageGroups) {
           multiplier += counts[ag] ? counts[ag] / 10 : 0;
         }
-
-        weights[key] = (weights[key] || 0) + requiredRaw * multiplier;
+        const prev = weights[key] || { weight: 0, rating: recipe.rating || 100 };
+        weights[key] = {
+          weight: prev.weight + requiredRaw * multiplier,
+          rating: recipe.rating || prev.rating
+        };
       }
     }
 
@@ -242,7 +245,10 @@ export default function MenuPage() {
       return message.info("No ingredient data found for these recipes");
 
     const txt = Object.entries(weights)
-      .map(([key, weight]) => `• ${key} — ${weight.toFixed(1)} g`)
+      .map(
+        ([key, obj]) =>
+          `• ${key} — ${Number(obj.weight).toFixed(1)} g (Rating: ${obj.rating}%)`
+      )
       .join("<br>");
 
     const html = `
@@ -271,16 +277,15 @@ export default function MenuPage() {
 <body>
   <h1>Shopping List (${scope})</h1>
 
-  ${Object.entries(weights)
+${Object.entries(weights)
         .map(
-          ([key, weight]) =>
-            `<div class="item">• <b>${key}</b> — ${weight >= 1000
-              ? (weight / 1000).toFixed(2) + " kg"
-              : weight.toFixed(1) + " g"
-            }</div>`
+          ([key, obj]) =>
+            `<div class="item">• <b>${key}</b> — ${obj.weight >= 1000
+              ? (obj.weight / 1000).toFixed(2) + " kg"
+              : obj.weight.toFixed(1) + " g"
+            } <span style="opacity:0.7">(Rating: ${obj.rating}%)</span></div>`
         )
         .join("")}
-
 </body>
 </html>
 `;
