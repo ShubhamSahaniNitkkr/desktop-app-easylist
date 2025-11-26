@@ -11,5 +11,6 @@ contextBridge.exposeInMainWorld('api', {
     exportJSON: () => ipcRenderer.invoke('db-exportJSON'),
     importJSON: () => ipcRenderer.invoke('db-importJSON'),
     pickImage: () => ipcRenderer.invoke('file-pickImage'),
-    printToPDF: (html) => ipcRenderer.invoke('print-to-pdf', html)
+    printToPDF: (html) => ipcRenderer.invoke('print-to-pdf', html),
+    sqlQuery: (query) => ipcRenderer.invoke("db-sql", query),
 });

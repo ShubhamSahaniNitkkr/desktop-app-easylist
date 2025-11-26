@@ -9,8 +9,7 @@ import {
   InputNumber,
   Typography,
   Space,
-  Collapse,
-  Modal,
+  Collapse
 } from "antd";
 import { getAll, update } from "../utils/ipc";
 
@@ -28,7 +27,7 @@ export default function OptionsPage() {
   const [profiles, setProfiles] = useState([]);
   const [activeProfile, setActiveProfile] = useState(null);
   const [sqlInput, setSqlInput] = useState("");
-  const [sqlResponse, setSqlResponse] = useState("");
+  const [sqlResult, setSqlResult] = useState(null);
   const [days] = useState([
     "Monday",
     "Tuesday",
@@ -46,7 +45,6 @@ export default function OptionsPage() {
       try {
         const all = await getAll();
         const opts = all.options || {};
-        // ensure arrays exist
         if (!opts.standardPortions) opts.standardPortions = [];
         if (!opts.ageGroups) opts.ageGroups = [];
         if (!opts.languages) opts.languages = ["en"];
@@ -74,7 +72,6 @@ export default function OptionsPage() {
     })();
   }, []);
 
-  // Centralized update helper that sets state and persists to backend
   async function updateOptions(updated) {
     try {
       setOptions(updated);
@@ -101,7 +98,7 @@ export default function OptionsPage() {
     message.info(`${value} removed`);
   }
 
-  // ---------- AGE GROUPS ----------
+  // AGE GROUPS
   async function addAgeGroup() {
     const name = newAgeGroup.trim();
     if (!name) return message.error("Please enter an age group name");
@@ -111,7 +108,7 @@ export default function OptionsPage() {
 
     const updated = {
       ...options,
-      ageGroups: [...(options.ageGroups || []), name],
+      ageGroups: [...(options.ageGroups || []), name]
     };
 
     try {
@@ -125,20 +122,18 @@ export default function OptionsPage() {
     }
   }
 
-
-
   function removeAgeGroup(label) {
     const updated = {
       ...options,
       ageGroups: (options.ageGroups || []).filter((x) => x !== label),
       standardPortions: (options.standardPortions || []).filter(
         (sp) => sp.ageGroup !== label
-      ),
+      )
     };
     updateOptions(updated);
   }
 
-  // ---------- PROFILES ----------
+  // PROFILES
   async function addProfile() {
     if (!newProfileName.trim()) return message.error("Profile name required");
     if (profiles.find((p) => p.name === newProfileName))
@@ -147,7 +142,7 @@ export default function OptionsPage() {
     const newP = {
       id: Date.now().toString(),
       name: newProfileName.trim(),
-      table: {},
+      table: {}
     };
 
     const updatedProfiles = [...profiles, newP];
@@ -179,7 +174,7 @@ export default function OptionsPage() {
     await updateOptions(updatedOptions);
   }
 
-  // ---------- STANDARD PORTIONS ----------
+  // STANDARD PORTIONS
   async function updatePortion(ageGroup, category, value) {
     const list = [...(options.standardPortions || [])];
     const idx = list.findIndex(
@@ -195,8 +190,13 @@ export default function OptionsPage() {
     const ageGroups = options.ageGroups || [];
     const cats = options.categories || [];
     const data = options.standardPortions || [];
+
     if (ageGroups.length === 0 || cats.length === 0)
-      return <Text type="secondary">Add some age groups and categories first.</Text>;
+      return (
+        <Text type="secondary">
+          Add some age groups and categories first.
+        </Text>
+      );
 
     return (
       <div
@@ -206,7 +206,7 @@ export default function OptionsPage() {
           border: "1px solid #eee",
           padding: 8,
           borderRadius: 6,
-          marginTop: 8,
+          marginTop: 8
         }}
       >
         <div
@@ -214,7 +214,7 @@ export default function OptionsPage() {
             display: "grid",
             gridTemplateColumns: `160px repeat(${ageGroups.length}, 100px)`,
             fontWeight: 600,
-            marginBottom: 6,
+            marginBottom: 6
           }}
         >
           <div>Category</div>
@@ -224,6 +224,7 @@ export default function OptionsPage() {
             </div>
           ))}
         </div>
+
         {cats.map((cat) => (
           <div
             key={cat}
@@ -231,7 +232,7 @@ export default function OptionsPage() {
               display: "grid",
               gridTemplateColumns: `160px repeat(${ageGroups.length}, 100px)`,
               alignItems: "center",
-              marginBottom: 6,
+              marginBottom: 6
             }}
           >
             <div>{cat}</div>
@@ -256,60 +257,45 @@ export default function OptionsPage() {
     );
   }
 
-  // ---------- SQL INJECTION ----------
-  async function injectSqlData() {
+  // ---------------- SQL CONSOLE ----------------
+  async function runSQL() {
+    if (!sqlInput.trim()) return message.warning("Enter SQL");
+
+    let query = sqlInput.trim();
+
+    // alias for "show tables"
+    if (query.toLowerCase() === "show tables") {
+      query = "SELECT name FROM sqlite_master WHERE type='table'";
+    }
+
     try {
-      if (!sqlInput.trim()) return message.warning("No SQL entered");
+      const resp = await window.api.sqlQuery(query);
 
-      const lower = sqlInput.toLowerCase();
-      let resp = "";
-      if (lower.startsWith("insert into ingredients")) {
-        try {
-          const colMatch = sqlInput.match(/\((.*?)\)/);
-          const valMatch = sqlInput.match(/values\s*\((.*?)\)/i);
-
-          if (!colMatch || !valMatch) throw new Error("Invalid SQL");
-
-          const columns = colMatch[1].split(",").map((x) => x.trim());
-          const values = valMatch[1]
-            .split(",")
-            .map((x) => x.trim().replace(/^'|'$/g, ""));
-
-          const obj = {};
-          columns.forEach((c, i) => (obj[c] = values[i] || null));
-
-          // Auto-parse JSON fields
-          if (obj.allergens) obj.allergens = JSON.parse(obj.allergens);
-          if (obj.nutrition) obj.nutrition = JSON.parse(obj.nutrition);
-
-          await window.api.add("ingredients", obj);
-
-          resp = "✔ Ingredient inserted successfully";
-          message.success("SQL ingredient inserted");
-
-        } catch (err) {
-          resp = "❌ SQL parse failed";
-          message.error("Invalid SQL insert format");
-        }
-      }
-      else if (lower.includes("insert into recipes")) {
-        resp = "SQL parsed and injected into Recipes table (simulated).";
-        message.success("SQL parsed — recipes injected");
-      } else {
-        resp = "SQL accepted but no known table found (demo mode).";
-        message.info("SQL accepted (no change).");
+      if (resp.error) {
+        setSqlResult({ error: resp.error });
+        message.error(resp.error);
+        return;
       }
 
-      setSqlResponse(resp);
-      setSqlInput("");
-    } catch (e) {
-      const errMsg = "Invalid SQL format or parse error.";
-      setSqlResponse(errMsg);
-      message.error(errMsg);
+      if (resp.rows) {
+        setSqlResult({ rows: resp.rows });
+        message.success("Query executed");
+        return;
+      }
+
+      setSqlResult({
+        message: resp.message,
+        changes: resp.changes,
+        lastID: resp.lastID
+      });
+      message.success("Query applied");
+    } catch (err) {
+      setSqlResult({ error: err.message });
+      message.error(err.message);
     }
   }
 
-  // manual save button (saves current options snapshot)
+  // SAVE
   async function saveAll() {
     try {
       await update("options", null, options);
@@ -319,7 +305,8 @@ export default function OptionsPage() {
     }
   }
 
-  if (!options) return <div style={{ padding: 20 }}>Loading configuration...</div>;
+  if (!options)
+    return <div style={{ padding: 20 }}>Loading configuration...</div>;
 
   return (
     <div style={{ padding: 20 }}>
@@ -418,7 +405,7 @@ export default function OptionsPage() {
                 display: "flex",
                 justifyContent: "space-between",
                 alignItems: "center",
-                marginBottom: 6,
+                marginBottom: 6
               }}
             >
               <span>{a}</span>
@@ -476,45 +463,116 @@ export default function OptionsPage() {
           )}
         </Card>
 
-        {/* ---------- SQL INJECTION ---------- */}
+        {/* ---------- SQL CONSOLE ---------- */}
         <Collapse>
-          <Panel header="Advanced: SQL Data Injection (for import)" key="1">
+          <Panel header="Advanced: SQL Console (Full SQLite Access)" key="sql">
             <Text type="secondary">
-              Paste raw SQL INSERT commands here (ingredients/recipes). Example:
-              <br />
-              <code>
-                INSERT INTO ingredients (name, unit, category) VALUES
-                ('Rice','g','starch');
-              </code>
+              Supports: SELECT, INSERT, UPDATE, DELETE, CREATE, DROP,
+              SHOW TABLES
             </Text>
+
             <Input.TextArea
               rows={6}
               value={sqlInput}
               onChange={(e) => setSqlInput(e.target.value)}
+              placeholder="Type SQL, e.g.:
+SELECT name FROM sqlite_master WHERE type='table';
+show tables;
+SELECT * FROM ingredients;"
               style={{ marginTop: 10 }}
-              placeholder="Paste SQL here..."
             />
-            <Button onClick={injectSqlData} type="primary" style={{ marginTop: 8 }}>
-              Inject SQL
+
+            <Button type="primary" onClick={runSQL} style={{ marginTop: 10 }}>
+              Run SQL
             </Button>
-            {sqlResponse && (
+
+            {/* ---------- RESULT BOX ---------- */}
+            {sqlResult && (
               <div
                 style={{
-                  background: "#f6f6f6",
-                  padding: 10,
+                  background: "#fafafa",
+                  padding: 12,
+                  marginTop: 15,
                   borderRadius: 6,
-                  marginTop: 10,
-                  fontFamily: "monospace",
-                  whiteSpace: "pre-wrap",
+                  border: "1px solid #eee"
                 }}
               >
-                {sqlResponse}
+                <Title level={5}>Result</Title>
+
+                {sqlResult.error && (
+                  <Text type="danger" style={{ whiteSpace: "pre-wrap" }}>
+                    {sqlResult.error}
+                  </Text>
+                )}
+
+                {sqlResult.message && (
+                  <Text style={{ whiteSpace: "pre-wrap" }}>
+                    {sqlResult.message}
+                    {sqlResult.changes !== undefined &&
+                      ` | Changes: ${sqlResult.changes}`}
+                    {sqlResult.lastID &&
+                      ` | Last ID: ${sqlResult.lastID}`}
+                  </Text>
+                )}
+
+                {/* TABLE RESULT */}
+                {sqlResult.rows && sqlResult.rows.length > 0 && (
+                  <div style={{ marginTop: 10 }}>
+                    <table
+                      style={{
+                        width: "100%",
+                        borderCollapse: "collapse",
+                        fontFamily: "monospace"
+                      }}
+                    >
+                      <thead>
+                        <tr>
+                          {Object.keys(sqlResult.rows[0]).map((col) => (
+                            <th
+                              key={col}
+                              style={{
+                                borderBottom: "1px solid #ccc",
+                                textAlign: "left",
+                                padding: 4
+                              }}
+                            >
+                              {col}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {sqlResult.rows.map((row, i) => (
+                          <tr key={i}>
+                            {Object.values(row).map((val, j) => (
+                              <td
+                                key={j}
+                                style={{
+                                  borderBottom: "1px solid #eee",
+                                  padding: 4
+                                }}
+                              >
+                                {String(val)}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+
+                {/* No rows */}
+                {sqlResult.rows &&
+                  sqlResult.rows.length === 0 && (
+                    <Text type="secondary">No rows returned.</Text>
+                  )}
               </div>
             )}
           </Panel>
         </Collapse>
 
-        {/* ---------- SAVE BUTTON ---------- */}
+        {/* ---------- SAVE ---------- */}
         <div style={{ textAlign: "right", marginTop: 20 }}>
           <Button type="primary" size="large" onClick={saveAll}>
             Save Changes
@@ -525,8 +583,16 @@ export default function OptionsPage() {
   );
 }
 
-// ---------- HELPER COMPONENTS ----------
-function ConfigList({ title, data, addLabel, onAdd, newValue, setNewValue, onRemove }) {
+// ------------ HELPERS ------------
+function ConfigList({
+  title,
+  data,
+  addLabel,
+  onAdd,
+  newValue,
+  setNewValue,
+  onRemove
+}) {
   return (
     <div style={{ marginTop: 12 }}>
       <Text strong>{title}</Text>
@@ -545,7 +611,7 @@ function ConfigList({ title, data, addLabel, onAdd, newValue, setNewValue, onRem
             display: "flex",
             justifyContent: "space-between",
             alignItems: "center",
-            marginBottom: 4,
+            marginBottom: 4
           }}
         >
           <span>{v}</span>
@@ -558,7 +624,14 @@ function ConfigList({ title, data, addLabel, onAdd, newValue, setNewValue, onRem
   );
 }
 
-function ProfileGrid({ profile, options, updateProfileCell, days, meals, activeProfile }) {
+function ProfileGrid({
+  profile,
+  options,
+  updateProfileCell,
+  days,
+  meals,
+  activeProfile
+}) {
   const ageGroups = options.ageGroups || [];
   return (
     <div
@@ -568,7 +641,7 @@ function ProfileGrid({ profile, options, updateProfileCell, days, meals, activeP
         border: "1px solid #eee",
         padding: 8,
         borderRadius: 6,
-        marginTop: 8,
+        marginTop: 8
       }}
     >
       <div
@@ -576,7 +649,7 @@ function ProfileGrid({ profile, options, updateProfileCell, days, meals, activeP
           display: "grid",
           gridTemplateColumns: `160px repeat(${ageGroups.length}, 100px)`,
           fontWeight: 600,
-          marginBottom: 6,
+          marginBottom: 6
         }}
       >
         <div>Day / Meal</div>
@@ -586,9 +659,11 @@ function ProfileGrid({ profile, options, updateProfileCell, days, meals, activeP
           </div>
         ))}
       </div>
+
       {days.map((d) => (
         <div key={d} style={{ marginBottom: 12 }}>
           <div style={{ fontWeight: 700, marginBottom: 4 }}>{d}</div>
+
           {meals.map((m) => (
             <div
               key={m}
@@ -596,10 +671,11 @@ function ProfileGrid({ profile, options, updateProfileCell, days, meals, activeP
                 display: "grid",
                 gridTemplateColumns: `160px repeat(${ageGroups.length}, 100px)`,
                 alignItems: "center",
-                marginBottom: 6,
+                marginBottom: 6
               }}
             >
               <div>{m}</div>
+
               {ageGroups.map((lbl) => {
                 const value = profile.table?.[d]?.[m]?.[lbl] || 0;
                 return (
@@ -607,7 +683,9 @@ function ProfileGrid({ profile, options, updateProfileCell, days, meals, activeP
                     key={lbl}
                     min={0}
                     value={value}
-                    onChange={(v) => updateProfileCell(activeProfile, d, m, lbl, v)}
+                    onChange={(v) =>
+                      updateProfileCell(activeProfile, d, m, lbl, v)
+                    }
                     style={{ width: 80 }}
                   />
                 );

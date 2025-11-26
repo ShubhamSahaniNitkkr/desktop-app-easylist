@@ -191,6 +191,31 @@ function registerIpcHandlers() {
         }));
     });
 
+    // ---------- RAW SQL EXECUTOR ----------
+    ipcMain.handle("db-sql", async (event, sql) => {
+        return new Promise((resolve) => {
+            db.all(sql, [], (err, rows) => {
+                if (err) {
+                    // For INSERT/UPDATE/DELETE
+                    db.run(sql, [], function (err2) {
+                        if (err2) {
+                            resolve({ error: err2.message });
+                        } else {
+                            resolve({
+                                message: "Query executed successfully",
+                                changes: this.changes,
+                                lastID: this.lastID
+                            });
+                        }
+                    });
+                } else {
+                    resolve({ rows });
+                }
+            });
+        });
+    });
+
+
     console.log("✅ SQLite IPC handlers registered successfully");
 }
 
